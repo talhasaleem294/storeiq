@@ -7,9 +7,9 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SkeletonTable } from '@/components/ui/Skeleton'
-import { useAdsData } from '@/hooks/useAdsData'
+import { type AdsPerformanceFilter, useAdsData } from '@/hooks/useAdsData'
 import { useMetaConnection } from '@/hooks/useMetaConnection'
-import { ROUTES, USD_TO_PKR_RATE } from '@/lib/constants'
+import { PAGINATION, ROUTES, USD_TO_PKR_RATE } from '@/lib/constants'
 import { exportCampaignsCSV } from '@/lib/csv'
 import { formatCurrency } from '@/lib/formatters'
 import { supabase } from '@/lib/supabase'
@@ -36,9 +36,16 @@ export function Ads(): JSX.Element {
 
   const [selectedDays, setSelectedDays] = useState<number>(30)
   const [showPKR, setShowPKR] = useState(false)
+  const [perfFilter, setPerfFilter] = useState<AdsPerformanceFilter>('all')
+  const [page, setPage] = useState(0)
   const dateRange = useMemo(() => getDateRange(selectedDays), [selectedDays])
 
-  const { campaigns, totals, loading: adsLoading } = useAdsData(workspaceId ?? '', dateRange)
+  const { campaigns, totals, totalCount, loading: adsLoading } = useAdsData(
+    workspaceId ?? '',
+    dateRange,
+    page,
+    perfFilter,
+  )
   const syncedRef = useRef(false)
 
   // Trigger a background sync when Meta is connected (once per session)
@@ -64,7 +71,19 @@ export function Ads(): JSX.Element {
 
   const loading = connLoading || adsLoading
 
-  // Campaigns losing money (spend > 0 and ROAS < 1)
+  const totalPages = Math.ceil(totalCount / PAGINATION.DEFAULT_PAGE_SIZE)
+
+  // Reset to page 0 when filter or date window changes
+  const handleFilterChange = (f: AdsPerformanceFilter): void => {
+    setPerfFilter(f)
+    setPage(0)
+  }
+  const handleDaysChange = (days: number): void => {
+    setSelectedDays(days)
+    setPage(0)
+  }
+
+  // Losing campaigns in the current page (top by spend — most impactful ones)
   const losingCampaigns = campaigns.filter((c) => c.roas < 1.0 && c.spend > 0)
 
   const statusVariant = (s: string): 'success' | 'neutral' | 'error' => {
@@ -81,7 +100,6 @@ export function Ads(): JSX.Element {
     return 'Unknown'
   }
 
-  // Currency formatting helpers
   const fmtSpend = (amount: number): string =>
     showPKR
       ? formatCurrency(amount * USD_TO_PKR_RATE)
@@ -113,14 +131,14 @@ export function Ads(): JSX.Element {
           <p className="mt-0.5 text-sm text-text">Ad spend, ROAS, and campaign performance.</p>
         </div>
 
-        {/* Controls: date filter + PKR toggle + export */}
+        {/* Controls: date filter + PKR toggle + perf filter + export */}
         <div className="flex flex-wrap items-center gap-2">
           {/* Date presets */}
           <div className="flex overflow-hidden rounded-lg border border-border">
             {DATE_PRESETS.map((preset) => (
               <button
                 key={preset.days}
-                onClick={() => { setSelectedDays(preset.days) }}
+                onClick={() => { handleDaysChange(preset.days) }}
                 className={`px-3 py-1.5 text-xs font-medium transition-colors min-h-[36px] ${
                   selectedDays === preset.days
                     ? 'bg-accent text-white'
@@ -152,7 +170,22 @@ export function Ads(): JSX.Element {
             </button>
           </div>
 
-          {/* Export CSV */}
+          {/* Performance filter */}
+          <div className="flex overflow-hidden rounded-lg border border-border text-xs font-medium">
+            {(['all', 'good', 'losing'] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => { handleFilterChange(f) }}
+                className={`px-3 py-1.5 capitalize transition-colors min-h-[36px] ${
+                  perfFilter === f ? 'bg-accent text-white' : 'bg-bg text-text hover:bg-surface'
+                }`}
+              >
+                {f === 'all' ? 'All' : f === 'good' ? 'Good' : 'Losing'}
+              </button>
+            ))}
+          </div>
+
+          {/* Export CSV (current page) */}
           {!loading && campaigns.length > 0 && (
             <Button
               variant="secondary"
@@ -166,7 +199,7 @@ export function Ads(): JSX.Element {
       </div>
 
       {/* Low ROAS alert banner */}
-      {!loading && losingCampaigns.length > 0 && (
+      {!loading && losingCampaigns.length > 0 && perfFilter !== 'good' && (
         <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
           <span className="mt-0.5 text-base text-amber-500">⚠</span>
           <p className="text-sm text-amber-800">
@@ -174,13 +207,12 @@ export function Ads(): JSX.Element {
               {losingCampaigns.length} {losingCampaigns.length === 1 ? 'campaign' : 'campaigns'}
             </span>{' '}
             {losingCampaigns.length === 1 ? 'has' : 'have'} ROAS below 1.0x — you{' '}
-            {losingCampaigns.length === 1 ? 'are' : 'are'} losing money on{' '}
-            {losingCampaigns.length === 1 ? 'this' : 'these'}.
+            are losing money on {losingCampaigns.length === 1 ? 'it' : 'these'}.
           </p>
         </div>
       )}
 
-      {/* Totals */}
+      {/* Totals — always reflect all campaigns, not the current filter */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <ProfitSummaryCard
           label={`Total Spend (${showPKR ? 'PKR' : 'USD'})`}
@@ -194,15 +226,16 @@ export function Ads(): JSX.Element {
       {/* Campaigns table */}
       <div>
         <h2 className="mb-3 text-sm font-semibold text-heading">
-          Top Campaigns by Spend
-          <span className="ml-2 text-xs font-normal text-text">
-            (synced data · last 30 days max)
-          </span>
+          {perfFilter === 'all' ? 'Campaigns by Spend' : perfFilter === 'good' ? 'Good Campaigns' : 'Losing Campaigns'}
+          <span className="ml-2 text-xs font-normal text-text">(synced data · last 30 days max)</span>
+          {!loading && totalCount > 0 && (
+            <span className="ml-2 text-xs font-normal text-text">· {totalCount} total</span>
+          )}
         </h2>
 
         {loading ? (
           <SkeletonTable rows={5} />
-        ) : campaigns.length === 0 ? (
+        ) : campaigns.length === 0 && perfFilter === 'all' ? (
           <Card padding="lg">
             <EmptyState
               title="No Meta Ads data yet"
@@ -213,6 +246,13 @@ export function Ads(): JSX.Element {
                   if (workspaceId) window.location.href = ROUTES.APP.SETTINGS(workspaceId)
                 },
               }}
+            />
+          </Card>
+        ) : campaigns.length === 0 ? (
+          <Card padding="lg">
+            <EmptyState
+              title={`No ${perfFilter === 'good' ? 'Good' : 'Losing'} campaigns`}
+              description={`None of your campaigns fall into the "${perfFilter === 'good' ? 'Good' : 'Losing'}" category in this period.`}
             />
           </Card>
         ) : (
@@ -283,6 +323,31 @@ export function Ads(): JSX.Element {
                 </Card>
               ))}
             </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="mt-4 flex items-center justify-center gap-3">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => { setPage((p) => p - 1) }}
+                  disabled={page === 0}
+                >
+                  Previous
+                </Button>
+                <span className="text-xs text-text">
+                  Page {page + 1} of {totalPages}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => { setPage((p) => p + 1) }}
+                  disabled={page >= totalPages - 1}
+                >
+                  Next
+                </Button>
+              </div>
+            )}
           </>
         )}
       </div>

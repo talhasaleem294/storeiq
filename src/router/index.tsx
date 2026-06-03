@@ -11,6 +11,7 @@ import { Settings } from '@/pages/app/Settings'
 import { AuthCallback } from '@/pages/AuthCallback'
 import { Landing } from '@/pages/Landing'
 import { Login } from '@/pages/Login'
+import { Privacy } from '@/pages/Privacy'
 import { Signup } from '@/pages/Signup'
 import { Workspaces } from '@/pages/Workspaces'
 
@@ -19,6 +20,7 @@ export const router = createBrowserRouter([
   { path: ROUTES.LANDING, element: <Landing /> },
   { path: ROUTES.LOGIN, element: <Login /> },
   { path: ROUTES.SIGNUP, element: <Signup /> },
+  { path: ROUTES.PRIVACY, element: <Privacy /> },
   { path: '/auth/callback', element: <AuthCallback /> },
 
   // Auth-required routes

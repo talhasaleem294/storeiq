@@ -12,12 +12,13 @@ export const ROUTES = {
     SETTINGS: (workspaceId: string) => `/app/${workspaceId}/settings`,
   },
   ADMIN: '/admin',
+  PRIVACY: '/privacy',
   AUTH_CALLBACK: '/auth/callback',
   AUTH_ACCEPT_INVITE: '/auth/accept-invite',
 } as const
 
 export const PAGINATION = {
-  DEFAULT_PAGE_SIZE: 20,
+  DEFAULT_PAGE_SIZE: 10,
   MAX_PAGE_SIZE: 100,
 } as const
 

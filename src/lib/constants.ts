@@ -25,3 +25,7 @@ export const CACHE_TTL_MINUTES = {
   SHOPIFY_ORDERS: 15,
   META_ADS: 30,
 } as const
+
+// Approximate USD → PKR conversion rate for Meta ad spend display
+// Update periodically to reflect current market rate
+export const USD_TO_PKR_RATE = 278

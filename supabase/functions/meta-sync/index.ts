@@ -40,6 +40,28 @@ Deno.serve(async (req) => {
 
   const { ads_account_id, access_token } = conn as { ads_account_id: string; access_token: string }
 
+  // Fetch current campaign statuses (one request, no pagination needed for typical accounts)
+  const statusMap = new Map<string, string>()
+  try {
+    const campaignsUrl = new URL(`${GRAPH_API}/${ads_account_id}/campaigns`)
+    campaignsUrl.searchParams.set('fields', 'id,effective_status')
+    campaignsUrl.searchParams.set('limit', '200')
+    campaignsUrl.searchParams.set('access_token', access_token)
+
+    const campaignsRes = await fetch(campaignsUrl.toString())
+    if (campaignsRes.ok) {
+      const campaignsJson = await campaignsRes.json() as {
+        data?: Array<{ id: string; effective_status: string }>
+      }
+      for (const c of campaignsJson.data ?? []) {
+        statusMap.set(c.id, c.effective_status)
+      }
+    }
+  } catch (err) {
+    console.error('[meta-sync] failed to fetch campaign statuses:', err)
+    // Non-fatal — sync continues, status will default to UNKNOWN
+  }
+
   // Fetch campaign insights from Meta — last 30 days, one row per campaign per day
   let synced = 0
   let afterCursor: string | null = null
@@ -89,6 +111,7 @@ Deno.serve(async (req) => {
         roas: parseFloat(item.purchase_roas?.[0]?.value ?? '0'),
         ctr: parseFloat(item.ctr ?? '0') / 100, // Meta returns percentage; store as decimal
         date: item.date_start,
+        status: statusMap.get(item.campaign_id) ?? 'UNKNOWN',
       }))
 
       const { error: upsertError } = await db

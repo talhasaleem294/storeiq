@@ -3,13 +3,16 @@ import { useParams } from 'react-router-dom'
 
 import { OrdersTable } from '@/components/features/OrdersTable'
 import { ProfitSummaryCard } from '@/components/features/ProfitSummaryCard'
+import { RevenueChart } from '@/components/features/RevenueChart'
+import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useAdsData } from '@/hooks/useAdsData'
 import { useMetaConnection } from '@/hooks/useMetaConnection'
 import { useOrders } from '@/hooks/useOrders'
 import { useShopifyConnection } from '@/hooks/useShopifyConnection'
 import { ROUTES } from '@/lib/constants'
-import { formatCurrency } from '@/lib/formatters'
+import { exportOrdersCSV } from '@/lib/csv'
+import { formatCurrency, formatPercentage } from '@/lib/formatters'
 import type { DateRange } from '@/types/app'
 
 const DATE_PRESETS = [
@@ -44,6 +47,13 @@ export function Profit(): JSX.Element {
   const loading = connLoading || ordersLoading || metaConnLoading || adsLoading
   const isConnected = !connLoading && connection !== null
 
+  // Key ratios
+  const refundRate = summary.totalRevenue > 0 ? (summary.totalRefunds / summary.totalRevenue) * 100 : 0
+  const profitMargin = summary.totalRevenue > 0 ? (trueNetProfit / summary.totalRevenue) * 100 : 0
+  const adSpendRatio = isMetaConnected && summary.totalRevenue > 0
+    ? (adSpend / summary.totalRevenue) * 100
+    : null
+
   if (!connLoading && !isConnected) {
     return (
       <div className="flex flex-1 items-center justify-center py-16">
@@ -76,12 +86,12 @@ export function Profit(): JSX.Element {
         </div>
 
         {/* Date range selector */}
-        <div className="flex rounded-lg border border-border overflow-hidden">
+        <div className="flex overflow-hidden rounded-lg border border-border">
           {DATE_PRESETS.map((preset) => (
             <button
               key={preset.days}
-              onClick={() => { setSelectedDays(preset.days); }}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+              onClick={() => { setSelectedDays(preset.days) }}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors min-h-[36px] ${
                 selectedDays === preset.days
                   ? 'bg-accent text-white'
                   : 'bg-bg text-text hover:bg-surface'
@@ -108,11 +118,47 @@ export function Profit(): JSX.Element {
         />
       </div>
 
+      {/* Key Ratios */}
+      {!loading && summary.totalRevenue > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <div className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs">
+            <span className="text-text">Refund Rate</span>
+            <span className="font-semibold text-heading">{formatPercentage(refundRate)}</span>
+          </div>
+          <div className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs">
+            <span className="text-text">Profit Margin</span>
+            <span className={`font-semibold ${profitMargin >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatPercentage(profitMargin)}
+            </span>
+          </div>
+          {adSpendRatio !== null && (
+            <div className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs">
+              <span className="text-text">Ad Spend Ratio</span>
+              <span className="font-semibold text-heading">{formatPercentage(adSpendRatio)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Revenue Chart */}
+      <RevenueChart orders={orders} loading={loading} />
+
       {/* Orders breakdown */}
       <div>
-        <h2 className="mb-3 text-sm font-semibold text-heading">
-          Orders ({orders.length})
-        </h2>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-heading">
+            Orders ({orders.length})
+          </h2>
+          {!loading && orders.length > 0 && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => { exportOrdersCSV(orders) }}
+            >
+              Export CSV
+            </Button>
+          )}
+        </div>
         <OrdersTable orders={orders} loading={loading} />
       </div>
     </div>

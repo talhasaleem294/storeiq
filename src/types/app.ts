@@ -64,6 +64,7 @@ export interface AdsData {
   roas: number
   ctr: number
   date: string
+  status: string
 }
 
 export interface DateRange {

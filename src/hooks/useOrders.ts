@@ -11,8 +11,11 @@ interface UseOrdersReturn {
   error: string | null
 }
 
+const EMPTY_SUMMARY: OrdersSummary = { totalRevenue: 0, totalRefunds: 0, netProfit: 0 }
+
 export function useOrders(workspaceId: string, dateRange?: DateRange): UseOrdersReturn {
   const [orders, setOrders] = useState<Order[]>([])
+  const [summary, setSummary] = useState<OrdersSummary>(EMPTY_SUMMARY)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -23,7 +26,14 @@ export function useOrders(workspaceId: string, dateRange?: DateRange): UseOrders
     setLoading(true)
     setError(null)
 
-    let query = supabase
+    // Summary query — no limit, only the two columns needed for profit math
+    let summaryQ = supabase
+      .from('orders')
+      .select('revenue, refund_amount')
+      .eq('workspace_id', workspaceId)
+
+    // Display query — paginated, all columns for the orders table
+    let displayQ = supabase
       .from('orders')
       .select('id, workspace_id, shopify_order_id, revenue, refund_amount, status, created_at')
       .eq('workspace_id', workspaceId)
@@ -31,18 +41,36 @@ export function useOrders(workspaceId: string, dateRange?: DateRange): UseOrders
       .limit(PAGINATION.DEFAULT_PAGE_SIZE)
 
     if (dateRange?.from) {
-      query = query.gte('created_at', dateRange.from)
+      summaryQ = summaryQ.gte('created_at', dateRange.from)
+      displayQ = displayQ.gte('created_at', dateRange.from)
     }
     if (dateRange?.to) {
-      query = query.lte('created_at', dateRange.to)
+      summaryQ = summaryQ.lte('created_at', dateRange.to)
+      displayQ = displayQ.lte('created_at', dateRange.to)
     }
 
-    void query.then(({ data, error: err }) => {
+    void Promise.all([summaryQ, displayQ]).then(([summaryRes, displayRes]) => {
       if (cancelled) return
+
+      const err = summaryRes.error ?? displayRes.error
       if (err) {
         setError(err.message)
       } else {
-        setOrders(data)
+        const allRows = summaryRes.data ?? []
+        const computed = allRows.reduce<OrdersSummary>(
+          (acc, row) => {
+            const revenue = Number(row.revenue)
+            const refund = Number(row.refund_amount)
+            return {
+              totalRevenue: acc.totalRevenue + revenue,
+              totalRefunds: acc.totalRefunds + refund,
+              netProfit: acc.netProfit + revenue - refund,
+            }
+          },
+          { totalRevenue: 0, totalRefunds: 0, netProfit: 0 }
+        )
+        setSummary(computed)
+        setOrders(displayRes.data ?? [])
       }
       setLoading(false)
     })
@@ -51,15 +79,6 @@ export function useOrders(workspaceId: string, dateRange?: DateRange): UseOrders
       cancelled = true
     }
   }, [workspaceId, dateRange?.from, dateRange?.to])
-
-  const summary: OrdersSummary = orders.reduce(
-    (acc, order) => ({
-      totalRevenue: acc.totalRevenue + order.revenue,
-      totalRefunds: acc.totalRefunds + order.refund_amount,
-      netProfit: acc.netProfit + order.revenue - order.refund_amount,
-    }),
-    { totalRevenue: 0, totalRefunds: 0, netProfit: 0 }
-  )
 
   return { orders, summary, loading, error }
 }

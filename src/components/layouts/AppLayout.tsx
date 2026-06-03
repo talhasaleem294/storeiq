@@ -5,6 +5,7 @@ import { AdsIcon } from '@/components/ui/icons/AdsIcon'
 import { DashboardIcon } from '@/components/ui/icons/DashboardIcon'
 import { ProfitIcon } from '@/components/ui/icons/ProfitIcon'
 import { SettingsIcon } from '@/components/ui/icons/SettingsIcon'
+import { useTheme } from '@/hooks/useTheme'
 import { APP_NAME, ROUTES } from '@/lib/constants'
 
 interface NavItem {
@@ -42,6 +43,7 @@ function bottomNavClass({ isActive }: { isActive: boolean }): string {
 export function AppLayout(): JSX.Element {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const navItems = getNavItems(workspaceId ?? '')
+  const { theme, toggleTheme } = useTheme()
 
   return (
     <div className="grid min-h-svh grid-cols-1 md:grid-cols-[220px_1fr]">
@@ -70,7 +72,26 @@ export function AppLayout(): JSX.Element {
           <span className="font-bold text-accent md:hidden">{APP_NAME}</span>
           <div className="hidden md:block" />
           <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-full bg-accent-bg flex items-center justify-center text-xs font-semibold text-accent">
+            {/* Dark / light toggle */}
+            <button
+              onClick={toggleTheme}
+              aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-text transition-colors hover:bg-surface hover:text-heading"
+            >
+              {theme === 'dark' ? (
+                /* Sun icon — click to go light */
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="4" />
+                  <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+                </svg>
+              ) : (
+                /* Moon icon — click to go dark */
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                </svg>
+              )}
+            </button>
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-bg text-xs font-semibold text-accent">
               S
             </div>
           </div>

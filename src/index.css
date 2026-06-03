@@ -15,16 +15,14 @@
   --font-mono: ui-monospace, Consolas, monospace;
 }
 
-/* Dark mode token overrides */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-accent: #c084fc;
-    --color-bg: #16171d;
-    --color-surface: #1f2028;
-    --color-border: #2e303a;
-    --color-text: #9ca3af;
-    --color-heading: #f3f4f6;
-  }
+/* Dark mode token overrides — activated by .dark class on <html> */
+.dark {
+  --color-accent: #c084fc;
+  --color-bg: #16171d;
+  --color-surface: #1f2028;
+  --color-border: #2e303a;
+  --color-text: #9ca3af;
+  --color-heading: #f3f4f6;
 }
 
 /* Base resets */

@@ -1,0 +1,117 @@
+import { getServiceClient, getSupabaseClient } from '../_shared/auth.ts'
+import { handleCors } from '../_shared/cors.ts'
+import { errorResponse, jsonResponse } from '../_shared/response.ts'
+
+const GRAPH_API = 'https://graph.facebook.com/v21.0'
+
+Deno.serve(async (req) => {
+  const cors = handleCors(req)
+  if (cors) return cors
+
+  const authHeader = req.headers.get('Authorization')
+  if (!authHeader) return errorResponse('Missing authorization header', 'UNAUTHORIZED', 401)
+
+  // Verify user is authenticated
+  const userClient = getSupabaseClient(authHeader)
+  const { data: { user }, error: authError } = await userClient.auth.getUser()
+  if (authError || !user) return errorResponse('Unauthorized', 'UNAUTHORIZED', 401)
+
+  let workspaceId: string
+  try {
+    const body = await req.json() as { workspaceId?: string }
+    workspaceId = body.workspaceId ?? ''
+  } catch {
+    return errorResponse('Invalid request body', 'INVALID_BODY')
+  }
+
+  if (!workspaceId) return errorResponse('workspaceId is required', 'MISSING_WORKSPACE_ID')
+
+  // Get meta connection (service role to access access_token)
+  const db = getServiceClient()
+  const { data: conn, error: connError } = await db
+    .from('meta_connections')
+    .select('ads_account_id, access_token')
+    .eq('workspace_id', workspaceId)
+    .maybeSingle()
+
+  if (connError || !conn) {
+    return errorResponse('Meta Ads not connected', 'NOT_CONNECTED', 404)
+  }
+
+  const { ads_account_id, access_token } = conn as { ads_account_id: string; access_token: string }
+
+  // Fetch campaign insights from Meta — last 30 days, one row per campaign per day
+  let synced = 0
+  let afterCursor: string | null = null
+
+  while (true) {
+    try {
+      const insightsUrl = new URL(`${GRAPH_API}/${ads_account_id}/insights`)
+      insightsUrl.searchParams.set('fields', 'campaign_id,campaign_name,spend,purchase_roas,ctr')
+      insightsUrl.searchParams.set('level', 'campaign')
+      insightsUrl.searchParams.set('date_preset', 'last_30d')
+      insightsUrl.searchParams.set('time_increment', '1')
+      insightsUrl.searchParams.set('access_token', access_token)
+      if (afterCursor) insightsUrl.searchParams.set('after', afterCursor)
+
+      const res = await fetch(insightsUrl.toString())
+      if (!res.ok) {
+        const text = await res.text()
+        console.error('[meta-sync] insights API error:', text)
+        break
+      }
+
+      const json = await res.json() as {
+        data?: Array<{
+          campaign_id: string
+          campaign_name: string
+          spend: string
+          purchase_roas?: Array<{ action_type: string; value: string }>
+          ctr?: string
+          date_start: string
+        }>
+        paging?: { cursors?: { after?: string }; next?: string }
+        error?: { message: string }
+      }
+
+      if (json.error || !json.data) {
+        console.error('[meta-sync] API error in response:', json.error)
+        break
+      }
+
+      if (json.data.length === 0) break
+
+      const rows = json.data.map((item) => ({
+        workspace_id: workspaceId,
+        campaign_id: item.campaign_id,
+        campaign_name: item.campaign_name,
+        spend: parseFloat(item.spend ?? '0'),
+        roas: parseFloat(item.purchase_roas?.[0]?.value ?? '0'),
+        ctr: parseFloat(item.ctr ?? '0') / 100, // Meta returns percentage; store as decimal
+        date: item.date_start,
+      }))
+
+      const { error: upsertError } = await db
+        .from('ads_data')
+        .upsert(rows, { onConflict: 'workspace_id,campaign_id,date', ignoreDuplicates: false })
+
+      if (upsertError) {
+        console.error('[meta-sync] upsert error:', upsertError)
+      } else {
+        synced += rows.length
+      }
+
+      // Paginate if there's a next page
+      if (json.paging?.next && json.paging.cursors?.after) {
+        afterCursor = json.paging.cursors.after
+      } else {
+        break
+      }
+    } catch (err) {
+      console.error('[meta-sync] unexpected error:', err)
+      break
+    }
+  }
+
+  return jsonResponse({ synced, workspace_id: workspaceId })
+})

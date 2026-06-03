@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+dist/
+
+# Environment variables — never commit secrets
+.env
+.env.local
+.env.*.local
+supabase/functions/.env
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Vite cache
+.vite/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Supabase auto-generated types — regenerate with: supabase gen types typescript --local > src/types/supabase.ts
+src/types/supabase.ts
+
+# Supabase temp build files
+supabase/.temp/
+
+# Shopify CLI deploy artifacts
+.shopify/deploy-bundle/
+
+# Inngest local config
+inngest/
+
+# Plaintext secrets reference file — never commit
+test.txt

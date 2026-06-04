@@ -10,6 +10,7 @@ export const ROUTES = {
     PROFIT: (workspaceId: string) => `/app/${workspaceId}/profit`,
     ADS: (workspaceId: string) => `/app/${workspaceId}/ads`,
     SETTINGS: (workspaceId: string) => `/app/${workspaceId}/settings`,
+    PROFILE: (workspaceId: string) => `/app/${workspaceId}/profile`,
   },
   ADMIN: '/admin',
   PRIVACY: '/privacy',

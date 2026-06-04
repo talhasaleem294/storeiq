@@ -4,7 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { AuthLayout } from '@/components/layouts/AuthLayout'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { ROUTES } from '@/lib/constants'
+import { ADMIN_EMAIL, ROUTES } from '@/lib/constants'
 import { supabase } from '@/lib/supabase'
 
 export function Login(): JSX.Element {
@@ -19,13 +19,14 @@ export function Login(): JSX.Element {
     setLoading(true)
     setError(null)
 
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
 
     if (authError) {
       setError(authError.message)
       setLoading(false)
     } else {
-      void navigate(ROUTES.WORKSPACES, { replace: true })
+      const destination = data.user?.email === ADMIN_EMAIL ? ROUTES.ADMIN : ROUTES.WORKSPACES
+      void navigate(destination, { replace: true })
     }
   }
 

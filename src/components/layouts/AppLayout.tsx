@@ -1,13 +1,16 @@
 import { clsx } from 'clsx'
-import { Link, NavLink, Outlet, useParams } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { Link, NavLink, Outlet, useNavigate, useParams } from 'react-router-dom'
 
 import { AdsIcon } from '@/components/ui/icons/AdsIcon'
 import { DashboardIcon } from '@/components/ui/icons/DashboardIcon'
 import { ProfitIcon } from '@/components/ui/icons/ProfitIcon'
 import { SettingsIcon } from '@/components/ui/icons/SettingsIcon'
+import { useAuth } from '@/hooks/useAuth'
 import { useTheme } from '@/hooks/useTheme'
 import { useWorkspace } from '@/hooks/useWorkspace'
 import { APP_NAME, ROUTES } from '@/lib/constants'
+import { supabase } from '@/lib/supabase'
 
 interface NavItem {
   label: string
@@ -47,6 +50,27 @@ export function AppLayout(): JSX.Element {
   const { theme, toggleTheme } = useTheme()
   const { workspace } = useWorkspace(workspaceId ?? '')
   const isPending = workspace !== null && workspace.subscription_status !== 'active'
+  const { user } = useAuth()
+  const navigate = useNavigate()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  const userInitial = (user?.email ?? 'U').charAt(0).toUpperCase()
+
+  useEffect(() => {
+    function handleOutsideClick(e: MouseEvent): void {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    if (menuOpen) document.addEventListener('mousedown', handleOutsideClick)
+    return () => { document.removeEventListener('mousedown', handleOutsideClick) }
+  }, [menuOpen])
+
+  async function handleSignOut(): Promise<void> {
+    await supabase.auth.signOut()
+    void navigate(ROUTES.LOGIN, { replace: true })
+  }
 
   return (
     <div className="grid min-h-svh grid-cols-1 md:grid-cols-[220px_1fr]">
@@ -94,8 +118,34 @@ export function AppLayout(): JSX.Element {
                 </svg>
               )}
             </button>
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-bg text-xs font-semibold text-accent">
-              S
+            {/* Avatar + dropdown */}
+            <div className="relative" ref={menuRef}>
+              <button
+                onClick={() => { setMenuOpen((o) => !o) }}
+                aria-label="Open user menu"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-bg text-xs font-semibold text-accent transition-opacity hover:opacity-80"
+              >
+                {userInitial}
+              </button>
+
+              {menuOpen && (
+                <div className="absolute right-0 top-10 z-50 w-44 rounded-xl border border-border bg-bg py-1 shadow-lg">
+                  <Link
+                    to={ROUTES.APP.PROFILE(workspaceId ?? '')}
+                    onClick={() => { setMenuOpen(false) }}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-sm text-text transition-colors hover:bg-surface hover:text-heading"
+                  >
+                    Profile
+                  </Link>
+                  <hr className="my-1 border-border" />
+                  <button
+                    onClick={() => { void handleSignOut() }}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-sm text-red-600 transition-colors hover:bg-surface dark:text-red-400"
+                  >
+                    Sign out
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </header>

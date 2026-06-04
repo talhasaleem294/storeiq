@@ -100,10 +100,12 @@ export function Ads(): JSX.Element {
     return 'Unknown'
   }
 
+  // spend is stored in PKR (Meta billing currency for Pakistani accounts)
+  // PKR mode: show as-is; USD mode: divide back to USD
   const fmtSpend = (amount: number): string =>
     showPKR
-      ? formatCurrency(amount * USD_TO_PKR_RATE)
-      : `$${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      ? formatCurrency(amount)
+      : `$${(amount / USD_TO_PKR_RATE).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
   if (!connLoading && !metaConn) {
     return (

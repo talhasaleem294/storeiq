@@ -19,6 +19,16 @@ export interface Workspace {
   name: string
   owner_user_id: string
   subscription_status: SubscriptionStatus
+  selected_plan: string | null
+  created_at: string
+}
+
+export interface AdminWorkspace {
+  id: string
+  name: string
+  owner_email: string
+  subscription_status: SubscriptionStatus
+  selected_plan: string | null
   created_at: string
 }
 

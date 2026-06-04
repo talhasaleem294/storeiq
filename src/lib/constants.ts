@@ -30,3 +30,27 @@ export const CACHE_TTL_MINUTES = {
 // Approximate USD → PKR conversion rate for Meta ad spend display
 // Update periodically to reflect current market rate
 export const USD_TO_PKR_RATE = 278
+
+// ─── Manual billing ──────────────────────────────────────────────────────────
+
+// Admin login: admin@storeiq.com / admin1234 — change before real launch
+export const ADMIN_EMAIL = 'admin@storeiq.com'
+
+// Dummy bank details for testing — replace with real details before launch
+export const BANK_DETAILS = {
+  accountTitle:  'StoreIQ Payments',
+  accountNumber: '1234-5678-9012',
+  bankName:      'Meezan Bank',
+  iban:          'PK36 MEZN 0001 2345 6789 0120',
+} as const
+
+// Dummy WhatsApp number for testing — replace before launch
+export const WHATSAPP_NUMBER = '923001234567'
+
+// Must stay in sync with the PLANS array in Landing.tsx
+export const PLAN_PRICES: Record<string, string> = {
+  starter: 'PKR 5,500',
+  growth:  'PKR 10,000',
+  pro:     'PKR 18,000',
+  agency:  'PKR 35,000',
+}

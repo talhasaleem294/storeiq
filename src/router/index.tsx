@@ -8,6 +8,7 @@ import { Ads } from '@/pages/app/Ads'
 import { Dashboard } from '@/pages/app/Dashboard'
 import { Profit } from '@/pages/app/Profit'
 import { Settings } from '@/pages/app/Settings'
+import { Admin } from '@/pages/Admin'
 import { AuthCallback } from '@/pages/AuthCallback'
 import { Landing } from '@/pages/Landing'
 import { Login } from '@/pages/Login'
@@ -28,6 +29,7 @@ export const router = createBrowserRouter([
     element: <AuthGuard />,
     children: [
       { path: ROUTES.WORKSPACES, element: <Workspaces /> },
+      { path: ROUTES.ADMIN, element: <Admin /> },
 
       // Workspace-scoped routes
       {

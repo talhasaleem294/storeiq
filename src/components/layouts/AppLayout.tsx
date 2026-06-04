@@ -1,11 +1,12 @@
 import { clsx } from 'clsx'
-import { NavLink, Outlet, useParams } from 'react-router-dom'
+import { Link, NavLink, Outlet, useParams } from 'react-router-dom'
 
 import { AdsIcon } from '@/components/ui/icons/AdsIcon'
 import { DashboardIcon } from '@/components/ui/icons/DashboardIcon'
 import { ProfitIcon } from '@/components/ui/icons/ProfitIcon'
 import { SettingsIcon } from '@/components/ui/icons/SettingsIcon'
 import { useTheme } from '@/hooks/useTheme'
+import { useWorkspace } from '@/hooks/useWorkspace'
 import { APP_NAME, ROUTES } from '@/lib/constants'
 
 interface NavItem {
@@ -44,6 +45,8 @@ export function AppLayout(): JSX.Element {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const navItems = getNavItems(workspaceId ?? '')
   const { theme, toggleTheme } = useTheme()
+  const { workspace } = useWorkspace(workspaceId ?? '')
+  const isPending = workspace !== null && workspace.subscription_status !== 'active'
 
   return (
     <div className="grid min-h-svh grid-cols-1 md:grid-cols-[220px_1fr]">
@@ -96,6 +99,22 @@ export function AppLayout(): JSX.Element {
             </div>
           </div>
         </header>
+
+        {/* Pending activation banner */}
+        {isPending && (
+          <div className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 dark:border-amber-800 dark:bg-amber-900/20">
+            <p className="text-xs text-amber-800 dark:text-amber-300">
+              <span className="font-semibold">Account pending activation.</span>{' '}
+              Transfer payment and WhatsApp your receipt to activate.
+            </p>
+            <Link
+              to={ROUTES.WORKSPACES}
+              className="shrink-0 text-xs font-semibold text-amber-700 underline underline-offset-2 hover:text-amber-900 dark:text-amber-400"
+            >
+              View instructions →
+            </Link>
+          </div>
+        )}
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-6">

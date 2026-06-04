@@ -1,13 +1,19 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 import { AuthLayout } from '@/components/layouts/AuthLayout'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { ROUTES } from '@/lib/constants'
+import { PLAN_PRICES, ROUTES } from '@/lib/constants'
 import { supabase } from '@/lib/supabase'
 
+const PENDING_PLAN_KEY = 'storeiq_pending_plan'
+
 export function Signup(): JSX.Element {
+  const [searchParams] = useSearchParams()
+  const planParam = searchParams.get('plan')
+  const planLabel = planParam ? (PLAN_PRICES[planParam] ?? null) : null
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -29,6 +35,8 @@ export function Signup(): JSX.Element {
     if (authError) {
       setError(authError.message)
     } else {
+      // Persist selected plan so Workspaces page can show correct payment amount
+      if (planParam) localStorage.setItem(PENDING_PLAN_KEY, planParam)
       setDone(true)
     }
     setLoading(false)
@@ -37,15 +45,27 @@ export function Signup(): JSX.Element {
   if (done) {
     return (
       <AuthLayout title="Check your email" subtitle="Almost there!">
-        <div className="text-center space-y-3">
+        <div className="space-y-3 text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-green-600">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="20 6 9 17 4 12" />
             </svg>
           </div>
           <p className="text-sm text-text">
-            We sent a confirmation link to <strong className="text-heading">{email}</strong>.
-            Click it to activate your account.
+            We sent a confirmation link to{' '}
+            <strong className="text-heading">{email}</strong>.
+          </p>
+          <p className="text-sm text-text">
+            After confirming your email you will see your{' '}
+            {planLabel ? (
+              <>
+                payment instructions for the{' '}
+                <strong className="text-heading capitalize">{planParam}</strong> plan (
+                <strong className="text-accent">{planLabel}/mo</strong>).
+              </>
+            ) : (
+              'workspace and next steps.'
+            )}
           </p>
           <Link to={ROUTES.LOGIN} className="inline-block text-sm text-accent hover:underline">
             Back to sign in
@@ -56,7 +76,14 @@ export function Signup(): JSX.Element {
   }
 
   return (
-    <AuthLayout title="Create your account" subtitle="Start your free trial today">
+    <AuthLayout
+      title="Create your account"
+      subtitle={
+        planLabel
+          ? `Starting with the ${planParam ?? ''} plan — ${planLabel}/mo`
+          : 'Start your free trial today'
+      }
+    >
       <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
         {error && (
           <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
@@ -68,7 +95,7 @@ export function Signup(): JSX.Element {
           label="Email"
           type="email"
           value={email}
-          onChange={(e) => { setEmail(e.target.value); }}
+          onChange={(e) => { setEmail(e.target.value) }}
           placeholder="you@example.com"
           required
           autoComplete="email"
@@ -78,7 +105,7 @@ export function Signup(): JSX.Element {
           label="Password"
           type="password"
           value={password}
-          onChange={(e) => { setPassword(e.target.value); }}
+          onChange={(e) => { setPassword(e.target.value) }}
           placeholder="Min. 8 characters"
           required
           autoComplete="new-password"
@@ -88,7 +115,7 @@ export function Signup(): JSX.Element {
           label="Confirm password"
           type="password"
           value={confirm}
-          onChange={(e) => { setConfirm(e.target.value); }}
+          onChange={(e) => { setConfirm(e.target.value) }}
           placeholder="••••••••"
           required
           autoComplete="new-password"
@@ -100,7 +127,7 @@ export function Signup(): JSX.Element {
 
         <p className="text-center text-sm text-text">
           Already have an account?{' '}
-          <Link to={ROUTES.LOGIN} className="text-accent hover:underline font-medium">
+          <Link to={ROUTES.LOGIN} className="font-medium text-accent hover:underline">
             Sign in
           </Link>
         </p>

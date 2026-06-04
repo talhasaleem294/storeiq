@@ -55,3 +55,10 @@ export const PLAN_PRICES: Record<string, string> = {
   pro:     'PKR 18,000',
   agency:  'PKR 35,000',
 }
+
+export const PLANS = [
+  { key: 'starter', label: 'Starter', price: 'PKR 5,500/mo', description: '1 store · Meta + Shopify' },
+  { key: 'growth',  label: 'Growth',  price: 'PKR 10,000/mo', description: '2 stores · Priority support' },
+  { key: 'pro',     label: 'Pro',     price: 'PKR 18,000/mo', description: '5 stores · Courier tracking' },
+  { key: 'agency',  label: 'Agency',  price: 'PKR 35,000/mo', description: 'Unlimited stores' },
+] as const

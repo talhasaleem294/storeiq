@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { AuthLayout } from '@/components/layouts/AuthLayout'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { PLAN_PRICES, ROUTES } from '@/lib/constants'
+import { PLAN_PRICES, PLANS, ROUTES } from '@/lib/constants'
 import { supabase } from '@/lib/supabase'
 
 const PENDING_PLAN_KEY = 'storeiq_pending_plan'
@@ -14,6 +14,9 @@ export function Signup(): JSX.Element {
   const planParam = searchParams.get('plan')
   const planLabel = planParam ? (PLAN_PRICES[planParam] ?? null) : null
 
+  // When no ?plan param, user picks inline
+  const [selectedPlan, setSelectedPlan] = useState<string>(planParam ?? '')
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -21,12 +24,20 @@ export function Signup(): JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
 
+  const effectivePlan = planParam ?? selectedPlan
+
   async function handleSubmit(e: React.SyntheticEvent): Promise<void> {
     e.preventDefault()
+
+    if (!planParam && !selectedPlan) {
+      setError('Please select a plan to continue.')
+      return
+    }
     if (password !== confirm) {
       setError("Passwords don't match")
       return
     }
+
     setLoading(true)
     setError(null)
 
@@ -35,14 +46,14 @@ export function Signup(): JSX.Element {
     if (authError) {
       setError(authError.message)
     } else {
-      // Persist selected plan so Workspaces page can show correct payment amount
-      if (planParam) localStorage.setItem(PENDING_PLAN_KEY, planParam)
+      if (effectivePlan) localStorage.setItem(PENDING_PLAN_KEY, effectivePlan)
       setDone(true)
     }
     setLoading(false)
   }
 
   if (done) {
+    const chosenLabel = PLAN_PRICES[effectivePlan] ?? null
     return (
       <AuthLayout title="Check your email" subtitle="Almost there!">
         <div className="space-y-3 text-center">
@@ -57,11 +68,11 @@ export function Signup(): JSX.Element {
           </p>
           <p className="text-sm text-text">
             After confirming your email you will see your{' '}
-            {planLabel ? (
+            {chosenLabel ? (
               <>
                 payment instructions for the{' '}
-                <strong className="text-heading capitalize">{planParam}</strong> plan (
-                <strong className="text-accent">{planLabel}/mo</strong>).
+                <strong className="text-heading capitalize">{effectivePlan}</strong> plan (
+                <strong className="text-accent">{chosenLabel}/mo</strong>).
               </>
             ) : (
               'workspace and next steps.'
@@ -81,13 +92,37 @@ export function Signup(): JSX.Element {
       subtitle={
         planLabel
           ? `Starting with the ${planParam ?? ''} plan — ${planLabel}/mo`
-          : 'Start your free trial today'
+          : 'Choose a plan to get started'
       }
     >
       <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
         {error && (
           <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
             {error}
+          </div>
+        )}
+
+        {/* Inline plan selector — only shown when no ?plan param in URL */}
+        {!planParam && (
+          <div className="grid grid-cols-2 gap-2">
+            {PLANS.map((plan) => (
+              <button
+                key={plan.key}
+                type="button"
+                onClick={() => { setSelectedPlan(plan.key); setError(null) }}
+                className={`rounded-lg border p-3 text-left transition-colors ${
+                  selectedPlan === plan.key
+                    ? 'border-accent bg-accent-bg text-heading'
+                    : 'border-border bg-bg text-text hover:border-accent/50 hover:bg-surface'
+                }`}
+              >
+                <p className={`text-xs font-semibold ${selectedPlan === plan.key ? 'text-accent' : 'text-heading'}`}>
+                  {plan.label}
+                </p>
+                <p className="mt-0.5 text-xs font-medium text-heading">{plan.price}</p>
+                <p className="mt-0.5 text-xs text-text">{plan.description}</p>
+              </button>
+            ))}
           </div>
         )}
 

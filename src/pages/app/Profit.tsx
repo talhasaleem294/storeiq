@@ -5,6 +5,7 @@ import { OrdersTable } from '@/components/features/OrdersTable'
 import { ProfitSummaryCard } from '@/components/features/ProfitSummaryCard'
 import { RevenueChart } from '@/components/features/RevenueChart'
 import { Button } from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useAdsData } from '@/hooks/useAdsData'
 import { useMetaConnection } from '@/hooks/useMetaConnection'
@@ -31,13 +32,15 @@ function getDateRange(days: number): DateRange {
   }
 }
 
+const HOUR_LABELS: Record<number, string> = { 0: '12am', 6: '6am', 12: '12pm', 18: '6pm', 23: '11pm' }
+
 export function Profit(): JSX.Element {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { connection, loading: connLoading } = useShopifyConnection(workspaceId ?? '')
   const { connection: metaConn, loading: metaConnLoading } = useMetaConnection(workspaceId ?? '')
   const [selectedDays, setSelectedDays] = useState<number>(30)
   const dateRange = useMemo(() => getDateRange(selectedDays), [selectedDays])
-  const { orders, summary, loading: ordersLoading } = useOrders(workspaceId ?? '', dateRange)
+  const { orders, summary, stats, loading: ordersLoading } = useOrders(workspaceId ?? '', dateRange, selectedDays)
   const { totals: adsTotals, loading: adsLoading } = useAdsData(workspaceId ?? '', dateRange)
 
   const isMetaConnected = !metaConnLoading && metaConn !== null
@@ -53,6 +56,29 @@ export function Profit(): JSX.Element {
   const adSpendRatio = isMetaConnected && summary.totalRevenue > 0
     ? (adSpend / summary.totalRevenue) * 100
     : null
+
+  // QW #1 — trend arrows
+  const revenueTrend = stats && stats.lastWeekRevenue > 0
+    ? ((stats.thisWeekRevenue - stats.lastWeekRevenue) / stats.lastWeekRevenue) * 100
+    : undefined
+  const netProfitLastWeek = stats ? stats.lastWeekRevenue - stats.lastWeekRefunds : 0
+  const netProfitThisWeek = stats ? stats.thisWeekRevenue - stats.thisWeekRefunds : 0
+  const profitTrend = stats && netProfitLastWeek > 0
+    ? ((netProfitThisWeek - netProfitLastWeek) / netProfitLastWeek) * 100
+    : undefined
+
+  // ME #1 — refund rate trend
+  const thisWeekRate = stats && stats.thisWeekRevenue > 0
+    ? (stats.thisWeekRefunds / stats.thisWeekRevenue) * 100 : 0
+  const lastWeekRate = stats && stats.lastWeekRevenue > 0
+    ? (stats.lastWeekRefunds / stats.lastWeekRevenue) * 100 : 0
+  const refundTrend = stats && lastWeekRate > 0
+    ? ((thisWeekRate - lastWeekRate) / lastWeekRate) * 100
+    : null
+
+  // ME #2 — peak hours
+  const maxHourCount = stats ? Math.max(...stats.hourlyOrderCounts, 1) : 1
+  const hasHourData = stats ? stats.hourlyOrderCounts.some(c => c > 0) : false
 
   if (!connLoading && !isConnected) {
     return (
@@ -91,7 +117,7 @@ export function Profit(): JSX.Element {
             <button
               key={preset.days}
               onClick={() => { setSelectedDays(preset.days) }}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors min-h-[36px] ${
+              className={`min-h-[36px] px-3 py-1.5 text-xs font-medium transition-colors ${
                 selectedDays === preset.days
                   ? 'bg-accent text-white'
                   : 'bg-bg text-text hover:bg-surface'
@@ -103,9 +129,9 @@ export function Profit(): JSX.Element {
         </div>
       </div>
 
-      {/* Summary cards */}
+      {/* Summary cards — QW #1 trend arrows */}
       <div className={`grid grid-cols-1 gap-4 ${isMetaConnected ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
-        <ProfitSummaryCard label="Revenue" value={formatCurrency(summary.totalRevenue)} loading={loading} />
+        <ProfitSummaryCard label="Revenue" value={formatCurrency(summary.totalRevenue)} trend={revenueTrend} loading={loading} />
         <ProfitSummaryCard label="Refunds" value={formatCurrency(summary.totalRefunds)} loading={loading} />
         {isMetaConnected && (
           <ProfitSummaryCard label="Ad Spend" value={formatCurrency(adSpend)} loading={loading} />
@@ -113,17 +139,23 @@ export function Profit(): JSX.Element {
         <ProfitSummaryCard
           label={isMetaConnected ? 'Net Profit (after ads)' : 'Net Profit'}
           value={formatCurrency(trueNetProfit)}
+          trend={profitTrend}
           loading={loading}
           highlight
         />
       </div>
 
-      {/* Key Ratios */}
+      {/* Key Ratios — ME #1 refund rate with trend */}
       {!loading && summary.totalRevenue > 0 && (
         <div className="flex flex-wrap gap-2">
           <div className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs">
             <span className="text-text">Refund Rate</span>
             <span className="font-semibold text-heading">{formatPercentage(refundRate)}</span>
+            {refundTrend !== null && (
+              <span className={`font-semibold ${refundTrend > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                {refundTrend > 0 ? '↑' : '↓'} {Math.abs(refundTrend).toFixed(1)}%
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs">
             <span className="text-text">Profit Margin</span>
@@ -143,11 +175,48 @@ export function Profit(): JSX.Element {
       {/* Revenue Chart */}
       <RevenueChart orders={orders} loading={loading} />
 
+      {/* ME #2 — Peak Hours Heatmap */}
+      {!loading && stats && hasHourData && (
+        <Card padding="md">
+          <h3 className="mb-4 text-sm font-semibold text-heading">Peak Order Hours</h3>
+          <div
+            className="grid gap-0.5"
+            style={{ gridTemplateColumns: 'repeat(24, 1fr)' }}
+          >
+            {stats.hourlyOrderCounts.map((count, hour) => (
+              <div
+                key={hour}
+                title={`${String(hour).padStart(2, '0')}:00 — ${String(count)} orders`}
+                className="h-8 rounded-sm bg-accent"
+                style={{ opacity: 0.1 + (count / maxHourCount) * 0.9 }}
+              />
+            ))}
+          </div>
+          <div className="relative mt-1.5 h-4">
+            {Object.entries(HOUR_LABELS).map(([h, label]) => {
+              const hour = Number(h)
+              return (
+                <span
+                  key={hour}
+                  className="absolute text-[10px] text-text"
+                  style={{
+                    left: `${((hour / 23) * 100).toFixed(2)}%`,
+                    transform: hour > 0 && hour < 23 ? 'translateX(-50%)' : undefined,
+                  }}
+                >
+                  {label}
+                </span>
+              )
+            })}
+          </div>
+        </Card>
+      )}
+
       {/* Orders breakdown */}
       <div>
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold text-heading">
-            Orders ({orders.length})
+            Orders ({String(orders.length)})
           </h2>
           {!loading && orders.length > 0 && (
             <Button

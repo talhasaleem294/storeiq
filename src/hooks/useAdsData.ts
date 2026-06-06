@@ -21,6 +21,8 @@ export interface CampaignInsights {
   worstCampaign: { name: string; roas: number; spend: number } | null
   zeroPurchaseCount: number
   zeroPurchaseSpend: number
+  bestCtrCampaign: { name: string; ctr: number } | null
+  deadCampaigns: Array<{ name: string; spend: number }>
 }
 
 interface UseAdsDataReturn {
@@ -41,6 +43,7 @@ function computeInsights(rows: CampaignRow[]): CampaignInsights {
 
   const best = spenders.length ? spenders.reduce((a, b) => (a.roas > b.roas ? a : b)) : null
   const worst = losers.length ? losers.reduce((a, b) => (a.spend > b.spend ? a : b)) : null
+  const bestCtr = spenders.length ? spenders.reduce((a, b) => (a.ctr > b.ctr ? a : b)) : null
 
   return {
     moneyAtRisk: losers.reduce((s, c) => s + c.spend, 0),
@@ -49,6 +52,8 @@ function computeInsights(rows: CampaignRow[]): CampaignInsights {
     worstCampaign: worst ? { name: worst.campaign_name, roas: worst.roas, spend: worst.spend } : null,
     zeroPurchaseCount: zeroPurchase.length,
     zeroPurchaseSpend: zeroPurchase.reduce((s, c) => s + c.spend, 0),
+    bestCtrCampaign: bestCtr ? { name: bestCtr.campaign_name, ctr: bestCtr.ctr } : null,
+    deadCampaigns: zeroPurchase.map(c => ({ name: c.campaign_name, spend: c.spend })),
   }
 }
 

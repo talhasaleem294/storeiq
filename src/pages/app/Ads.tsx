@@ -31,6 +31,15 @@ function getDateRange(days: number): DateRange {
   }
 }
 
+function getMonthRange(): DateRange {
+  const now = new Date()
+  const from = new Date(now.getFullYear(), now.getMonth(), 1)
+  return {
+    from: from.toISOString().substring(0, 10),
+    to: now.toISOString().substring(0, 10),
+  }
+}
+
 export function Ads(): JSX.Element {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { connection: metaConn, loading: connLoading } = useMetaConnection(workspaceId ?? '')
@@ -40,7 +49,9 @@ export function Ads(): JSX.Element {
   const [perfFilter, setPerfFilter] = useState<AdsPerformanceFilter>('all')
   const [page, setPage] = useState(0)
   const [usdToPkr, setUsdToPkr] = useState<number>(USD_TO_PKR_RATE)
+  const [deadExpanded, setDeadExpanded] = useState(false)
   const dateRange = useMemo(() => getDateRange(selectedDays), [selectedDays])
+  const monthRange = useMemo(() => getMonthRange(), [])
 
   const { campaigns, totals, totalCount, insights, loading: adsLoading } = useAdsData(
     workspaceId ?? '',
@@ -48,6 +59,9 @@ export function Ads(): JSX.Element {
     page,
     perfFilter,
   )
+  // QW #6 — month spend for velocity calculation (no page/filter, just totals)
+  const { totals: monthTotals } = useAdsData(workspaceId ?? '', monthRange)
+
   const syncedRef = useRef(false)
 
   // Fetch live USD→PKR rate once on mount; falls back to hardcoded constant
@@ -109,6 +123,13 @@ export function Ads(): JSX.Element {
       ? formatCurrency(amount)
       : `$${(amount / usdToPkr).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
+  // QW #6 — spend velocity
+  const dayOfMonth = new Date().getDate()
+  const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()
+  const projectedMonthSpend = dayOfMonth > 0
+    ? (monthTotals.totalSpend / dayOfMonth) * daysInMonth
+    : 0
+
   if (!connLoading && !metaConn) {
     return (
       <div className="flex flex-1 items-center justify-center py-16">
@@ -143,7 +164,7 @@ export function Ads(): JSX.Element {
               <button
                 key={preset.days}
                 onClick={() => { handleDaysChange(preset.days) }}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors min-h-[36px] ${
+                className={`min-h-[36px] px-3 py-1.5 text-xs font-medium transition-colors ${
                   selectedDays === preset.days
                     ? 'bg-accent text-white'
                     : 'bg-bg text-text hover:bg-surface'
@@ -158,7 +179,7 @@ export function Ads(): JSX.Element {
           <div className="flex overflow-hidden rounded-lg border border-border text-xs font-medium">
             <button
               onClick={() => { setShowPKR(false) }}
-              className={`px-3 py-1.5 transition-colors min-h-[36px] ${
+              className={`min-h-[36px] px-3 py-1.5 transition-colors ${
                 !showPKR ? 'bg-accent text-white' : 'bg-bg text-text hover:bg-surface'
               }`}
             >
@@ -166,7 +187,7 @@ export function Ads(): JSX.Element {
             </button>
             <button
               onClick={() => { setShowPKR(true) }}
-              className={`px-3 py-1.5 transition-colors min-h-[36px] ${
+              className={`min-h-[36px] px-3 py-1.5 transition-colors ${
                 showPKR ? 'bg-accent text-white' : 'bg-bg text-text hover:bg-surface'
               }`}
             >
@@ -180,7 +201,7 @@ export function Ads(): JSX.Element {
               <button
                 key={f}
                 onClick={() => { handleFilterChange(f) }}
-                className={`px-3 py-1.5 capitalize transition-colors min-h-[36px] ${
+                className={`min-h-[36px] px-3 py-1.5 capitalize transition-colors ${
                   perfFilter === f ? 'bg-accent text-white' : 'bg-bg text-text hover:bg-surface'
                 }`}
               >
@@ -213,12 +234,28 @@ export function Ads(): JSX.Element {
         <ProfitSummaryCard label="Avg CTR" value={`${(totals.avgCtr * 100).toFixed(2)}%`} loading={loading} />
       </div>
 
+      {/* QW #6 — Spend Velocity */}
+      {!loading && projectedMonthSpend > 0 && (
+        <div className="flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-3">
+          <span className="text-base">📈</span>
+          <p className="text-sm text-text">
+            On pace for{' '}
+            <span className="font-semibold text-heading">{fmtSpend(projectedMonthSpend)}</span>{' '}
+            ad spend this month
+            <span className="ml-1 text-text/70">
+              ({fmtSpend(monthTotals.totalSpend)} so far, day {String(dayOfMonth)} of {String(daysInMonth)})
+            </span>
+          </p>
+        </div>
+      )}
+
       {/* Campaign Health insight cards */}
       {!loading && insights !== null && (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-heading">Campaign Health</h2>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {/* QW #5: 4-column grid with Best CTR card */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {/* Card 1 — Money at Risk */}
             <div className={`rounded-xl border p-4 ${
               insights.moneyAtRisk > 0
@@ -296,20 +333,70 @@ export function Ads(): JSX.Element {
                 </p>
               </div>
             )}
+
+            {/* Card 4 — QW #5 Best CTR */}
+            {insights.bestCtrCampaign !== null ? (
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+                <p className="text-xs font-medium uppercase tracking-wide text-blue-600 dark:text-blue-400">
+                  Best CTR
+                </p>
+                <p className="mt-1 text-2xl font-bold text-blue-800 dark:text-blue-200">
+                  {(insights.bestCtrCampaign.ctr * 100).toFixed(2)}%
+                </p>
+                <p className="mt-1 truncate text-xs text-blue-700 dark:text-blue-300">
+                  {insights.bestCtrCampaign.name}
+                </p>
+                <p className="mt-0.5 text-xs text-blue-600 dark:text-blue-400">
+                  Highest click-through rate
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-border bg-surface p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-text">Best CTR</p>
+                <p className="mt-1 text-sm text-text">No CTR data yet</p>
+              </div>
+            )}
           </div>
 
-          {/* Zero Purchase Warning */}
-          {insights.zeroPurchaseCount > 0 && (
-            <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-900/20">
-              <span className="mt-0.5 text-base text-amber-500">⚠</span>
-              <p className="text-sm text-amber-800 dark:text-amber-300">
-                <span className="font-semibold">
-                  {String(insights.zeroPurchaseCount)} active campaign{insights.zeroPurchaseCount === 1 ? '' : 's'}
-                </span>{' '}
-                {insights.zeroPurchaseCount === 1 ? 'is' : 'are'} spending{' '}
-                <span className="font-semibold">{fmtSpend(insights.zeroPurchaseSpend)}</span> with zero sales.
-                Meta Pixel may not be firing — check your Pixel setup.
-              </p>
+          {/* ME #4 — Dead Campaigns expandable list */}
+          {insights.deadCampaigns.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20">
+              <div className="flex items-center justify-between px-4 py-3">
+                <div className="flex items-start gap-3">
+                  <span className="mt-0.5 text-base text-amber-500">⚠</span>
+                  <p className="text-sm text-amber-800 dark:text-amber-300">
+                    <span className="font-semibold">
+                      {String(insights.deadCampaigns.length)} dead campaign{insights.deadCampaigns.length === 1 ? '' : 's'}
+                    </span>{' '}
+                    — spending{' '}
+                    <span className="font-semibold">{fmtSpend(insights.zeroPurchaseSpend)}</span> with zero sales
+                  </p>
+                </div>
+                <button
+                  onClick={() => { setDeadExpanded(e => !e) }}
+                  className="ml-3 shrink-0 text-xs font-medium text-amber-700 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
+                >
+                  {deadExpanded ? 'Hide' : 'Show details'}
+                </button>
+              </div>
+
+              {deadExpanded && (
+                <div className="border-t border-amber-200 dark:border-amber-800">
+                  <div className="divide-y divide-amber-100 dark:divide-amber-800/50">
+                    {insights.deadCampaigns.map((c) => (
+                      <div key={c.name} className="flex items-center justify-between px-4 py-2.5">
+                        <span className="truncate text-sm text-amber-900 dark:text-amber-200">{c.name}</span>
+                        <span className="ml-3 shrink-0 text-sm font-semibold text-amber-800 dark:text-amber-300">
+                          {fmtSpend(c.spend)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="px-4 py-2.5 text-xs text-amber-700 dark:text-amber-400">
+                    Check your Meta Pixel setup or pause these campaigns to stop burning budget.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -321,7 +408,7 @@ export function Ads(): JSX.Element {
           {perfFilter === 'all' ? 'Campaigns by Spend' : perfFilter === 'good' ? 'Good Campaigns' : 'Losing Campaigns'}
           <span className="ml-2 text-xs font-normal text-text">(synced data · last 30 days max)</span>
           {!loading && totalCount > 0 && (
-            <span className="ml-2 text-xs font-normal text-text">· {totalCount} total</span>
+            <span className="ml-2 text-xs font-normal text-text">· {String(totalCount)} total</span>
           )}
         </h2>
 
@@ -428,7 +515,7 @@ export function Ads(): JSX.Element {
                   Previous
                 </Button>
                 <span className="text-xs text-text">
-                  Page {page + 1} of {totalPages}
+                  Page {String(page + 1)} of {String(totalPages)}
                 </span>
                 <Button
                   variant="secondary"

@@ -1,5 +1,6 @@
-// WorkspaceMemberRole is defined in @/lib/permissions — import from there
-export type { WorkspaceMemberRole } from '@/lib/permissions'
+import type { WorkspaceMemberRole } from '@/lib/permissions'
+
+export type { WorkspaceMemberRole }
 
 export type SubscriptionStatus = 'active' | 'inactive' | 'trial'
 

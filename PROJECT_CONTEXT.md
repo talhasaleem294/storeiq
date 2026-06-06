@@ -268,6 +268,8 @@ ads_data
 
 -- workspaces also has (added migration 20240006):
 --   selected_plan text DEFAULT NULL  — plan key chosen on landing page (starter/growth/pro/agency)
+-- workspaces also has (added migration 20240008):
+--   trial_started_at timestamptz DEFAULT NOW()  — used for trial countdown banner
 ```
 
 **RLS:** Every table has Row Level Security. All reads/writes scoped through `is_workspace_member()`, `is_workspace_owner()`, and `is_workspace_owner_or_admin()` helper functions.
@@ -288,6 +290,7 @@ ads_data
 - `20240005000000_add_campaign_status.sql` — adds `status text DEFAULT 'UNKNOWN'` to `ads_data` ✅ applied
 - `20240006000000_add_plan_and_admin.sql` — adds `selected_plan text` to `workspaces`, updates `create_workspace` RPC to accept `selected_plan`, adds `admin_get_all_workspaces()` + `admin_set_subscription_status()` security definer RPCs, seeds test admin user `admin@storeiq.com` ✅ applied
 - `20240007000000_invite_and_supervisor_role.sql` — adds `supervisor` role, `workspace_invites` table, `is_workspace_owner_or_admin()` helper, updated RLS on `workspace_members` (admins can invite/remove supervisors), 4 new security definer RPCs ✅ applied
+- `20240008000000_add_trial_started_at.sql` — adds `trial_started_at timestamptz DEFAULT NOW()` to `workspaces`, backfills existing trial rows from `created_at` ✅ applied
 
 ---
 
@@ -414,7 +417,7 @@ Supabase PostgreSQL (RLS enforced)
 │   ├── lib/
 │   │   ├── supabase.ts               # Supabase client (anon JWT key)
 │   │   ├── formatters.ts             # formatCurrency (PKR), formatDate, formatPercentage
-│   │   ├── constants.ts              # APP_NAME, ROUTES, PAGINATION, CACHE_TTL_MINUTES, USD_TO_PKR_RATE, PLANS, PLAN_PRICES, ADMIN_EMAIL, BANK_DETAILS
+│   │   ├── constants.ts              # APP_NAME, ROUTES, PAGINATION, CACHE_TTL_MINUTES, USD_TO_PKR_RATE, TRIAL_DAYS, PLANS, PLAN_PRICES, ADMIN_EMAIL, BANK_DETAILS
 │   │   ├── permissions.ts            # WorkspaceMemberRole type+const, Permission type, ROLE_PERMISSIONS map, hasPermission()
 │   │   ├── csv.ts                    # exportOrdersCSV(), exportCampaignsCSV() — client-side download
 │   │   └── validators.ts
@@ -650,12 +653,11 @@ Issues that won't cause problems at 5–10 clients but will need attention befor
    - On success → redirects to workspace dashboard
    - Ensures invited users can sign back in after signing out
 
-2. **Forgot password flow** — to implement
-   - Add "Forgot password?" link on `/login` → calls `supabase.auth.resetPasswordForEmail(email)`
-   - Supabase sends a reset email → user clicks link → lands on `/auth/callback` with `type=recovery` in the URL hash
-   - Handle `type=recovery` in `AuthCallback.tsx`: detect it, redirect to `/set-password` (reuse the same page, no `workspaceId` param → redirects to `/workspaces` after success)
-   - **Note:** `/set-password` is already built and handles the missing `workspaceId` case — just wire up the `AuthCallback` recovery detection and add the "Forgot password?" link on `/login`
-   - Also wire up branded email templates in Supabase dashboard (Auth → Email Templates) for confirmation, invite, and reset emails
+2. **Forgot password flow** ✅ DONE
+   - "Forgot password?" link on `/login` → inline mode switch (login / forgot / forgot-sent states)
+   - Calls `supabase.auth.resetPasswordForEmail(email, { redirectTo: origin + ROUTES.AUTH_CALLBACK })`
+   - `AuthCallback.tsx` detects `type=recovery` in hash → redirects to `/set-password` (no `workspaceId`)
+   - `SetPassword.tsx` already handles missing `workspaceId` → redirects to `/workspaces` on success
 
 ---
 
@@ -670,15 +672,14 @@ Issues that won't cause problems at 5–10 clients but will need attention befor
    - Go to `/admin` (as admin) → verify workspace appears → click Activate → verify banner disappears
    - Check the thin amber banner inside the app (Dashboard) disappears after activation
 
-2. **Trial days remaining banner**
-   - Show in both `Workspaces.tsx` (above/replacing the current pending banner) and `AppLayout.tsx` (slim top bar)
-   - Need a `trial_started_at` column in `workspaces` (or use `created_at` as proxy) and a `trial_days` constant (e.g. 7 days)
-   - Color scheme by urgency:
-     - > 3 days left → blue/info tone ("5 days left in your trial")
-     - 1–3 days left → amber/warning tone ("2 days left — activate today")
-     - Expired → red/error tone ("Trial expired — activate to continue")
-   - When `subscription_status === 'active'` → no banner shown at all
-   - Migration needed: add `trial_started_at timestamptz DEFAULT NOW()` to workspaces
+2. **Trial days remaining banner** ✅ DONE
+   - Shown in `Workspaces.tsx` and `AppLayout.tsx`, colour-coded by urgency:
+     - > 3 days left → blue ("5 days left in your trial")
+     - 1–3 days left → amber ("2 days left — activate today")
+     - Expired → red ("Trial expired — activate to continue")
+   - Hidden when `subscription_status === 'active'`
+   - Migration 20240008 applied — `trial_started_at timestamptz DEFAULT NOW()` on `workspaces`
+   - `TRIAL_DAYS = 7` constant in `constants.ts`; `trial_started_at` added to `Workspace` type and both workspace hooks
 
 ### Admin UX
 
@@ -708,11 +709,11 @@ These must be done before charging a single customer. Estimated total: 2–3 day
 
 | Feature | Notes | Est. Time |
 |---|---|---|
-| **Forgot password flow** | "Forgot password?" link on `/login` → `supabase.auth.resetPasswordForEmail` → `type=recovery` in `AuthCallback` → `/set-password` (already built, just wire it up) | 2h |
+| ~~**Forgot password flow**~~ | ✅ DONE — inline forgot/sent modes on Login, `type=recovery` in AuthCallback, reuses SetPassword | 2h |
 | **Deploy to Vercel + custom domain** | Static build, 10 minutes. No customer will pay for `localhost:5173`. | 2h |
 | **Branded Supabase email templates** | Confirmation, invite, and reset emails must come from your domain. Supabase dashboard → Auth → Email Templates. | 2h |
 | **Meta App Review submission** | App is in Dev mode — only added testers can connect. Submit `ads_read` for review: Privacy Policy URL (done), demo video, use case description. Approval: 24–72h. | 1 day |
-| **Trial countdown banner** | Show in `Workspaces.tsx` and `AppLayout.tsx`. Needs `trial_started_at timestamptz DEFAULT NOW()` migration. Color-coded: >3 days = blue, 1–3 days = amber, expired = red. Hide when `subscription_status = 'active'`. | 3h |
+| ~~**Trial countdown banner**~~ | ✅ DONE — colour-coded by days left in both AppLayout and Workspaces; migration 20240008 applied | 3h |
 | **Re-sync button in Settings** | Calls `shopify-sync` Edge Function on demand. Without periodic sync, customers who connected weeks ago have stale data. | 3h |
 | **Periodic Shopify sync** | Supabase `pg_cron` or Inngest — sync all workspaces with active Shopify connections daily at 2am PKT. Stagger one workspace per 30s to avoid rate limits. | 4h |
 | **Meta token expiry warning** | Check `token_expires_at` in `meta_connections`. Show reconnect banner in Settings when <7 days remaining. Token expires after 60 days — silent failure destroys trust. | 2h |
@@ -887,10 +888,10 @@ These features will consume weeks and return nothing at 10–50 clients.
 - [x] `AuthCallback.tsx` — handles `type=invite` link, calls `accept_workspace_invite` RPC ✅
 - [x] Migration 20240007 pushed — supervisor role, workspace_invites, 4 new RPCs, updated RLS ✅
 - [x] `SetPassword.tsx` — post-invite set-password page (`/set-password?workspaceId=xxx`); also reusable for forgot-password recovery flow ✅
-- [ ] Forgot password flow — "Forgot password?" link on `/login` → reset email → `type=recovery` in `AuthCallback` → `/set-password`
+- [x] Forgot password flow — inline forgot/sent mode on Login, `type=recovery` in `AuthCallback`, reuses `/set-password` ✅
+- [x] Trial countdown banner — colour-coded (blue/amber/red) in AppLayout + Workspaces; migration 20240008 applied ✅
 - [ ] Supabase email templates — brand the confirmation/reset/invite emails
 - [ ] End-to-end signup flow test (both paths: landing → signup and direct signup)
-- [ ] Trial days remaining banner (Workspaces + AppLayout, needs `trial_started_at` migration)
 - [ ] ROAS drop email alert (Inngest cron)
 - [ ] Deploy frontend to Vercel / Cloudflare Pages
 
@@ -964,6 +965,8 @@ These features will consume weeks and return nothing at 10–50 clients.
 | Invite flow | Edge Function + `workspace_invites` table + Supabase `inviteUserByEmail` + `accept_workspace_invite` RPC | Edge Function needed for service role key; invite table enables pending invite tracking and revoke |
 | workspace-invite deployment | `--no-verify-jwt` flag | Function does its own auth check (caller role verified); using `--no-verify-jwt` allows flexibility without losing security |
 | Admin invite permission | Admin can invite both Admin and Supervisor roles | Admins manage the day-to-day team; Owner remains in control via role-change restriction |
+| Forgot password UX | Inline mode switch on Login (login/forgot/forgot-sent) — no separate page | Avoids adding a new route; AuthLayout reused; `SetPassword.tsx` already handles the no-workspaceId recovery case |
+| Trial countdown | `trial_started_at` column + `TRIAL_DAYS = 7` constant; colour-coded banner in AppLayout + Workspaces | Client-side calculation, no cron needed; colours give urgency signal without being intrusive |
 
 ---
 
@@ -1104,10 +1107,11 @@ Never commit `.env`, `supabase/functions/.env`, `src/types/supabase.ts`, or any 
 | Invite acceptance in `AuthCallback.tsx` (`type=invite` → `accept_workspace_invite` RPC) | ✅ Done |
 | Migration 20240007 pushed | ✅ Done |
 | Set-password page after invite (`/set-password?workspaceId=xxx`) | ✅ Done |
-| Forgot password flow (`/login` link → reset email → `type=recovery` in `AuthCallback` → `/set-password`) | 🔧 Next |
+| Forgot password flow (`/login` link → reset email → `type=recovery` in `AuthCallback` → `/set-password`) | ✅ Done |
+| Trial days remaining banner (Workspaces + AppLayout, color changes by urgency) | ✅ Done |
+| Migration 20240008 pushed (trial_started_at on workspaces) | ✅ Done |
 | Supabase email templates (branded confirmation/reset/invite emails) | 🔧 Next |
 | End-to-end signup flow test (both paths) | 🔧 Next |
-| Trial days remaining banner (Workspaces + AppLayout, color changes by urgency) | 🔧 Next |
 | Frontend deployed to Vercel / Cloudflare Pages | 🔧 Pending |
 | Meta app — add clients as testers (Dev mode limitation) | 🔧 Pending |
 | Token expiry warning banner in Settings (Meta 60d, Shopify) | 🔧 Pending |

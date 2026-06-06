@@ -29,17 +29,20 @@ export function Admin(): JSX.Element {
 
   const fetchAll = useCallback(async (): Promise<void> => {
     setLoading(true)
-    const { data, error } = await supabase.rpc('admin_get_all_workspaces')
+    const rpcResult = await supabase.rpc('admin_get_all_workspaces')
 
-    if (error) {
-      if (error.message.includes('Unauthorized')) {
+    if (rpcResult.error) {
+      if (rpcResult.error.message.includes('Unauthorized')) {
         setUnauthorized(true)
       }
       setLoading(false)
       return
     }
 
-    setWorkspaces((data as AdminWorkspace[]) ?? [])
+    const safe = Array.isArray(rpcResult.data)
+      ? (rpcResult.data as unknown as AdminWorkspace[])
+      : []
+    setWorkspaces(safe)
     setLoading(false)
   }, [])
 
@@ -112,7 +115,7 @@ export function Admin(): JSX.Element {
           <div>
             <h1 className="text-xl font-bold text-heading">Workspaces</h1>
             <p className="mt-0.5 text-sm text-text">
-              {loading ? '—' : `${workspaces.length} total`}
+              {loading ? '—' : `${String(workspaces.length)} total`}
             </p>
           </div>
           <Button variant="secondary" size="sm" onClick={() => void fetchAll()} disabled={loading}>
@@ -147,7 +150,7 @@ export function Admin(): JSX.Element {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {workspaces.map((ws) => {
-                    const busy = actionState[ws.id] === true
+                    const busy = actionState[ws.id]
                     const planPrice = ws.selected_plan ? (PLAN_PRICES[ws.selected_plan] ?? null) : null
                     return (
                       <tr key={ws.id} className="bg-bg transition-colors hover:bg-surface/50">
@@ -202,7 +205,7 @@ export function Admin(): JSX.Element {
             {/* Mobile cards */}
             <div className="space-y-3 md:hidden">
               {workspaces.map((ws) => {
-                const busy = actionState[ws.id] === true
+                const busy = actionState[ws.id]
                 const planPrice = ws.selected_plan ? (PLAN_PRICES[ws.selected_plan] ?? null) : null
                 return (
                   <div key={ws.id} className="rounded-xl border border-border bg-bg p-4">

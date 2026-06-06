@@ -5,16 +5,17 @@ import { GuestGuard } from '@/components/guards/GuestGuard'
 import { WorkspaceGuard } from '@/components/guards/WorkspaceGuard'
 import { AppLayout } from '@/components/layouts/AppLayout'
 import { ROUTES } from '@/lib/constants'
+import { Admin } from '@/pages/Admin'
 import { Ads } from '@/pages/app/Ads'
 import { Dashboard } from '@/pages/app/Dashboard'
 import { Profile } from '@/pages/app/Profile'
 import { Profit } from '@/pages/app/Profit'
 import { Settings } from '@/pages/app/Settings'
-import { Admin } from '@/pages/Admin'
 import { AuthCallback } from '@/pages/AuthCallback'
 import { Landing } from '@/pages/Landing'
 import { Login } from '@/pages/Login'
 import { Privacy } from '@/pages/Privacy'
+import { SetPassword } from '@/pages/SetPassword'
 import { Signup } from '@/pages/Signup'
 import { Workspaces } from '@/pages/Workspaces'
 
@@ -23,6 +24,7 @@ export const router = createBrowserRouter([
   { path: ROUTES.LANDING, element: <Landing /> },
   { path: ROUTES.PRIVACY, element: <Privacy /> },
   { path: '/auth/callback', element: <AuthCallback /> },
+  { path: ROUTES.AUTH_ACCEPT_INVITE, element: <AuthCallback /> },
 
   // Guest-only routes (redirect to /workspaces if already logged in)
   {
@@ -39,6 +41,7 @@ export const router = createBrowserRouter([
     children: [
       { path: ROUTES.WORKSPACES, element: <Workspaces /> },
       { path: ROUTES.ADMIN, element: <Admin /> },
+      { path: ROUTES.SET_PASSWORD, element: <SetPassword /> },
 
       // Workspace-scoped routes
       {

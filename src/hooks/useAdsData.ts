@@ -38,8 +38,6 @@ export function useAdsData(
     // Debounce page changes — avoids firing a query on every rapid Next/Prev click.
     // Filter/date changes fire immediately (page resets to 0 before this effect runs).
     const debounceMs = page > 0 ? 150 : 0
-    let timer: ReturnType<typeof setTimeout>
-
     // Totals query — always unfiltered by perf so summary cards reflect all campaigns
     let totalsQ = supabase
       .from('ads_data')
@@ -72,7 +70,7 @@ export function useAdsData(
     const rangeTo = rangeFrom + PAGINATION.DEFAULT_PAGE_SIZE - 1
     displayQ = displayQ.range(rangeFrom, rangeTo)
 
-    timer = setTimeout(() => {
+    const timer = setTimeout(() => {
       void Promise.all([totalsQ, displayQ]).then(([totalsRes, displayRes]) => {
         if (cancelled) return
 

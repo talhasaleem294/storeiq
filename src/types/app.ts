@@ -1,12 +1,7 @@
-// String literal unions (erasableSyntaxOnly-compatible — no enums)
-export type WorkspaceMemberRole = 'owner' | 'admin' | 'viewer'
-export type SubscriptionStatus = 'active' | 'inactive' | 'trial'
+// WorkspaceMemberRole is defined in @/lib/permissions — import from there
+export type { WorkspaceMemberRole } from '@/lib/permissions'
 
-export const WorkspaceMemberRole = {
-  Owner: 'owner' as const,
-  Admin: 'admin' as const,
-  Viewer: 'viewer' as const,
-}
+export type SubscriptionStatus = 'active' | 'inactive' | 'trial'
 
 export const SubscriptionStatus = {
   Active: 'active' as const,
@@ -21,6 +16,7 @@ export interface Workspace {
   subscription_status: SubscriptionStatus
   selected_plan: string | null
   created_at: string
+  trial_started_at: string | null
 }
 
 export interface AdminWorkspace {
@@ -36,6 +32,26 @@ export interface WorkspaceMember {
   workspace_id: string
   user_id: string
   role: WorkspaceMemberRole
+  created_at: string
+}
+
+export interface WorkspaceMemberWithEmail {
+  workspace_id: string
+  user_id: string
+  role: WorkspaceMemberRole
+  email: string
+  created_at: string
+}
+
+export interface WorkspaceInvite {
+  id: string
+  workspace_id: string
+  invited_email: string
+  role: 'admin' | 'supervisor'
+  invited_by: string
+  token: string
+  accepted_at: string | null
+  expires_at: string
   created_at: string
 }
 

@@ -27,7 +27,7 @@ export function useWorkspaceList(): UseWorkspaceListReturn {
 
     void supabase
       .from('workspaces')
-      .select('id, name, owner_user_id, subscription_status, selected_plan, created_at')
+      .select('id, name, owner_user_id, subscription_status, selected_plan, created_at, trial_started_at')
       .order('created_at', { ascending: false })
       .then(({ data, error: err }) => {
         if (cancelled) return

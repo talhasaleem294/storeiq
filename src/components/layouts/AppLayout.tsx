@@ -9,7 +9,9 @@ import { SettingsIcon } from '@/components/ui/icons/SettingsIcon'
 import { useAuth } from '@/hooks/useAuth'
 import { useTheme } from '@/hooks/useTheme'
 import { useWorkspace } from '@/hooks/useWorkspace'
-import { APP_NAME, ROUTES } from '@/lib/constants'
+import { useWorkspaceRole } from '@/hooks/useWorkspaceRole'
+import { APP_NAME, ROUTES, TRIAL_DAYS } from '@/lib/constants'
+import { hasPermission } from '@/lib/permissions'
 import { supabase } from '@/lib/supabase'
 
 interface NavItem {
@@ -44,13 +46,25 @@ function bottomNavClass({ isActive }: { isActive: boolean }): string {
   )
 }
 
+function trialDaysRemaining(trialStartedAt: string | null): number {
+  if (!trialStartedAt) return TRIAL_DAYS
+  const expires = new Date(trialStartedAt).getTime() + TRIAL_DAYS * 86_400_000
+  return Math.max(Math.ceil((expires - Date.now()) / 86_400_000), 0)
+}
+
 export function AppLayout(): JSX.Element {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const navItems = getNavItems(workspaceId ?? '')
   const { theme, toggleTheme } = useTheme()
   const { workspace } = useWorkspace(workspaceId ?? '')
-  const isPending = workspace !== null && workspace.subscription_status !== 'active'
+  const status = workspace?.subscription_status ?? null
+  const isTrial = status === 'trial'
+  const isPendingActivation = status !== null && status !== 'active' && status !== 'trial'
+  const daysLeft = isTrial ? trialDaysRemaining(workspace?.trial_started_at ?? null) : 0
   const { user } = useAuth()
+  const { role } = useWorkspaceRole(workspaceId ?? '')
+  const navItems = getNavItems(workspaceId ?? '').filter(
+    (item) => item.label !== 'Settings' || hasPermission(role, 'settings:view')
+  )
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -150,8 +164,44 @@ export function AppLayout(): JSX.Element {
           </div>
         </header>
 
-        {/* Pending activation banner */}
-        {isPending && (
+        {/* Trial countdown banner */}
+        {isTrial && (
+          <div className={`flex items-center justify-between gap-3 border-b px-4 py-2 ${
+            daysLeft > 3
+              ? 'border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20'
+              : daysLeft >= 1
+                ? 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20'
+                : 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20'
+          }`}>
+            <p className={`text-xs ${
+              daysLeft > 3
+                ? 'text-blue-800 dark:text-blue-300'
+                : daysLeft >= 1
+                  ? 'text-amber-800 dark:text-amber-300'
+                  : 'text-red-700 dark:text-red-400'
+            }`}>
+              {daysLeft > 0
+                ? <><span className="font-semibold">{daysLeft} day{daysLeft === 1 ? '' : 's'} left in your trial.</span>{' '}Activate to keep access.</>
+                : <><span className="font-semibold">Trial expired.</span>{' '}Activate your account to continue.</>
+              }
+            </p>
+            <Link
+              to={ROUTES.WORKSPACES}
+              className={`shrink-0 text-xs font-semibold underline underline-offset-2 ${
+                daysLeft > 3
+                  ? 'text-blue-700 hover:text-blue-900 dark:text-blue-400'
+                  : daysLeft >= 1
+                    ? 'text-amber-700 hover:text-amber-900 dark:text-amber-400'
+                    : 'text-red-700 hover:text-red-900 dark:text-red-400'
+              }`}
+            >
+              Activate now →
+            </Link>
+          </div>
+        )}
+
+        {/* Pending activation banner (inactive / unpaid, not in trial) */}
+        {isPendingActivation && (
           <div className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 dark:border-amber-800 dark:bg-amber-900/20">
             <p className="text-xs text-amber-800 dark:text-amber-300">
               <span className="font-semibold">Account pending activation.</span>{' '}

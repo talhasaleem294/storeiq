@@ -28,7 +28,7 @@ export function useWorkspace(workspaceId: string): UseWorkspaceReturn {
 
     void supabase
       .from('workspaces')
-      .select('id, name, owner_user_id, subscription_status, selected_plan, created_at')
+      .select('id, name, owner_user_id, subscription_status, selected_plan, created_at, trial_started_at')
       .eq('id', workspaceId)
       .single()
       .then(({ data, error: err }) => {

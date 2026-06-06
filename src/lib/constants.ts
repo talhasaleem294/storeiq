@@ -16,6 +16,7 @@ export const ROUTES = {
   PRIVACY: '/privacy',
   AUTH_CALLBACK: '/auth/callback',
   AUTH_ACCEPT_INVITE: '/auth/accept-invite',
+  SET_PASSWORD: '/set-password',
 } as const
 
 export const PAGINATION = {
@@ -31,6 +32,9 @@ export const CACHE_TTL_MINUTES = {
 // Approximate USD → PKR conversion rate for Meta ad spend display
 // Update periodically to reflect current market rate
 export const USD_TO_PKR_RATE = 278
+
+// Trial period length in days — shown as countdown in AppLayout and Workspaces
+export const TRIAL_DAYS = 7
 
 // ─── Manual billing ──────────────────────────────────────────────────────────
 

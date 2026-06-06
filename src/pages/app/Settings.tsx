@@ -1,19 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 
+import { WorkspaceMembers } from '@/components/features/WorkspaceMembers'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
-import { Skeleton } from '@/components/ui/Skeleton'
+import { Skeleton, SkeletonPage } from '@/components/ui/Skeleton'
 import { useMetaConnection } from '@/hooks/useMetaConnection'
 import { useShopifyConnection } from '@/hooks/useShopifyConnection'
+import { useWorkspaceRole } from '@/hooks/useWorkspaceRole'
 import { formatDate } from '@/lib/formatters'
+import { hasPermission } from '@/lib/permissions'
 
 type ConnectMode = 'oauth' | 'token'
 
 export function Settings(): JSX.Element {
   const { workspaceId } = useParams<{ workspaceId: string }>()
+  const { role, loading: roleLoading } = useWorkspaceRole(workspaceId ?? '')
   const [searchParams, setSearchParams] = useSearchParams()
   const { connection, loading, error, connect, connectWithToken, disconnect, refetch } = useShopifyConnection(workspaceId ?? '')
   const { connection: metaConn, loading: metaLoading, error: metaError, connect: metaConnect, disconnect: metaDisconnect } = useMetaConnection(workspaceId ?? '')
@@ -90,6 +94,25 @@ export function Settings(): JSX.Element {
     setMetaDisconnecting(true)
     await metaDisconnect()
     setMetaDisconnecting(false)
+  }
+
+  if (roleLoading) return <SkeletonPage />
+
+  if (!hasPermission(role, 'settings:view')) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Card padding="lg" className="max-w-sm w-full text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-600 dark:bg-red-900/30">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0110 0v4" />
+            </svg>
+          </div>
+          <h2 className="text-base font-semibold text-heading">Access Denied</h2>
+          <p className="mt-1 text-sm text-text">You don&apos;t have permission to access Settings. Contact your workspace owner.</p>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -305,26 +328,7 @@ export function Settings(): JSX.Element {
         )}
       </Card>
 
-      {/* Team Members — post-MVP placeholder */}
-      <Card padding="lg">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-100 text-purple-700 dark:bg-purple-900/30">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" />
-              <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
-            </svg>
-          </div>
-          <div>
-            <h2 className="text-sm font-semibold text-heading">Team Members</h2>
-            <p className="text-xs text-text">Invite team members to this workspace.</p>
-          </div>
-          <Badge variant="neutral" className="ml-auto">Coming soon</Badge>
-        </div>
-        <p className="text-sm text-text">
-          Member invitations will be available soon. You'll be able to add admins who can
-          view dashboards and manage connections.
-        </p>
-      </Card>
+      <WorkspaceMembers workspaceId={workspaceId ?? ''} callerRole={role} />
     </div>
   )
 }

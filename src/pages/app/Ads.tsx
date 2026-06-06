@@ -11,6 +11,7 @@ import { type AdsPerformanceFilter, useAdsData } from '@/hooks/useAdsData'
 import { useMetaConnection } from '@/hooks/useMetaConnection'
 import { PAGINATION, ROUTES, USD_TO_PKR_RATE } from '@/lib/constants'
 import { exportCampaignsCSV } from '@/lib/csv'
+import { getUsdToPkrRate } from '@/lib/exchangeRate'
 import { formatCurrency } from '@/lib/formatters'
 import { supabase } from '@/lib/supabase'
 import type { DateRange } from '@/types/app'
@@ -38,15 +39,21 @@ export function Ads(): JSX.Element {
   const [showPKR, setShowPKR] = useState(false)
   const [perfFilter, setPerfFilter] = useState<AdsPerformanceFilter>('all')
   const [page, setPage] = useState(0)
+  const [usdToPkr, setUsdToPkr] = useState<number>(USD_TO_PKR_RATE)
   const dateRange = useMemo(() => getDateRange(selectedDays), [selectedDays])
 
-  const { campaigns, totals, totalCount, loading: adsLoading } = useAdsData(
+  const { campaigns, totals, totalCount, insights, loading: adsLoading } = useAdsData(
     workspaceId ?? '',
     dateRange,
     page,
     perfFilter,
   )
   const syncedRef = useRef(false)
+
+  // Fetch live USD→PKR rate once on mount; falls back to hardcoded constant
+  useEffect(() => {
+    void getUsdToPkrRate().then(setUsdToPkr)
+  }, [])
 
   // Trigger a background sync when Meta is connected (once per session)
   useEffect(() => {
@@ -70,10 +77,8 @@ export function Ads(): JSX.Element {
   }, [metaConn, workspaceId])
 
   const loading = connLoading || adsLoading
-
   const totalPages = Math.ceil(totalCount / PAGINATION.DEFAULT_PAGE_SIZE)
 
-  // Reset to page 0 when filter or date window changes
   const handleFilterChange = (f: AdsPerformanceFilter): void => {
     setPerfFilter(f)
     setPage(0)
@@ -82,9 +87,6 @@ export function Ads(): JSX.Element {
     setSelectedDays(days)
     setPage(0)
   }
-
-  // Losing campaigns in the current page (top by spend — most impactful ones)
-  const losingCampaigns = campaigns.filter((c) => c.roas < 1.0 && c.spend > 0)
 
   const statusVariant = (s: string): 'success' | 'neutral' | 'error' => {
     if (s === 'ACTIVE') return 'success'
@@ -101,11 +103,11 @@ export function Ads(): JSX.Element {
   }
 
   // spend is stored in PKR (Meta billing currency for Pakistani accounts)
-  // PKR mode: show as-is; USD mode: divide back to USD
+  // PKR mode: show as-is; USD mode: divide by live rate (falls back to hardcoded constant)
   const fmtSpend = (amount: number): string =>
     showPKR
       ? formatCurrency(amount)
-      : `$${(amount / USD_TO_PKR_RATE).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : `$${(amount / usdToPkr).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
   if (!connLoading && !metaConn) {
     return (
@@ -200,20 +202,6 @@ export function Ads(): JSX.Element {
         </div>
       </div>
 
-      {/* Low ROAS alert banner */}
-      {!loading && losingCampaigns.length > 0 && perfFilter !== 'good' && (
-        <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-          <span className="mt-0.5 text-base text-amber-500">⚠</span>
-          <p className="text-sm text-amber-800">
-            <span className="font-semibold">
-              {losingCampaigns.length} {losingCampaigns.length === 1 ? 'campaign' : 'campaigns'}
-            </span>{' '}
-            {losingCampaigns.length === 1 ? 'has' : 'have'} ROAS below 1.0x — you{' '}
-            are losing money on {losingCampaigns.length === 1 ? 'it' : 'these'}.
-          </p>
-        </div>
-      )}
-
       {/* Totals — always reflect all campaigns, not the current filter */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <ProfitSummaryCard
@@ -224,6 +212,108 @@ export function Ads(): JSX.Element {
         <ProfitSummaryCard label="Avg ROAS" value={`${totals.avgRoas.toFixed(2)}x`} loading={loading} />
         <ProfitSummaryCard label="Avg CTR" value={`${(totals.avgCtr * 100).toFixed(2)}%`} loading={loading} />
       </div>
+
+      {/* Campaign Health insight cards */}
+      {!loading && insights !== null && (
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-heading">Campaign Health</h2>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {/* Card 1 — Money at Risk */}
+            <div className={`rounded-xl border p-4 ${
+              insights.moneyAtRisk > 0
+                ? 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20'
+                : 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20'
+            }`}>
+              <p className={`text-xs font-medium uppercase tracking-wide ${
+                insights.moneyAtRisk > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
+              }`}>
+                Money at Risk
+              </p>
+              <p className={`mt-1 text-2xl font-bold ${
+                insights.moneyAtRisk > 0 ? 'text-red-800 dark:text-red-200' : 'text-green-800 dark:text-green-200'
+              }`}>
+                {insights.moneyAtRisk > 0 ? fmtSpend(insights.moneyAtRisk) : 'None'}
+              </p>
+              <p className={`mt-1 text-xs ${
+                insights.moneyAtRisk > 0 ? 'text-red-700 dark:text-red-300' : 'text-green-700 dark:text-green-300'
+              }`}>
+                {insights.moneyAtRisk > 0
+                  ? `${String(insights.losingCount)} campaign${insights.losingCount === 1 ? '' : 's'} with ROAS < 1.0`
+                  : 'All campaigns are profitable'}
+              </p>
+            </div>
+
+            {/* Card 2 — Best Performer */}
+            {insights.bestCampaign !== null ? (
+              <div className="rounded-xl border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20">
+                <p className="text-xs font-medium uppercase tracking-wide text-green-600 dark:text-green-400">
+                  Best Performer ↑
+                </p>
+                <p className="mt-1 text-2xl font-bold text-green-800 dark:text-green-200">
+                  {insights.bestCampaign.roas.toFixed(2)}x ROAS
+                </p>
+                <p className="mt-1 truncate text-xs text-green-700 dark:text-green-300">
+                  {insights.bestCampaign.name}
+                </p>
+                <p className="mt-0.5 text-xs text-green-600 dark:text-green-400">
+                  Consider scaling this campaign
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-border bg-surface p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-text">Best Performer</p>
+                <p className="mt-1 text-sm text-text">No spend data yet</p>
+              </div>
+            )}
+
+            {/* Card 3 — Biggest Drain */}
+            {insights.worstCampaign !== null ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
+                <p className="text-xs font-medium uppercase tracking-wide text-red-600 dark:text-red-400">
+                  Biggest Drain ↓
+                </p>
+                <p className="mt-1 text-2xl font-bold text-red-800 dark:text-red-200">
+                  {fmtSpend(insights.worstCampaign.spend)}
+                </p>
+                <p className="mt-1 truncate text-xs text-red-700 dark:text-red-300">
+                  {insights.worstCampaign.name}
+                </p>
+                <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">
+                  {insights.worstCampaign.roas.toFixed(2)}x ROAS — consider pausing
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20">
+                <p className="text-xs font-medium uppercase tracking-wide text-green-600 dark:text-green-400">
+                  Biggest Drain ↓
+                </p>
+                <p className="mt-1 text-lg font-bold text-green-800 dark:text-green-200">
+                  No losing campaigns
+                </p>
+                <p className="mt-1 text-xs text-green-700 dark:text-green-300">
+                  Every campaign with spend is profitable
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Zero Purchase Warning */}
+          {insights.zeroPurchaseCount > 0 && (
+            <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-900/20">
+              <span className="mt-0.5 text-base text-amber-500">⚠</span>
+              <p className="text-sm text-amber-800 dark:text-amber-300">
+                <span className="font-semibold">
+                  {String(insights.zeroPurchaseCount)} active campaign{insights.zeroPurchaseCount === 1 ? '' : 's'}
+                </span>{' '}
+                {insights.zeroPurchaseCount === 1 ? 'is' : 'are'} spending{' '}
+                <span className="font-semibold">{fmtSpend(insights.zeroPurchaseSpend)}</span> with zero sales.
+                Meta Pixel may not be firing — check your Pixel setup.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Campaigns table */}
       <div>

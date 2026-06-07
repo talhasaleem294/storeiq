@@ -7,7 +7,11 @@ import { AppLayout } from '@/components/layouts/AppLayout'
 import { ROUTES } from '@/lib/constants'
 import { Admin } from '@/pages/Admin'
 import { Ads } from '@/pages/app/Ads'
+import { CampaignDetail } from '@/pages/app/CampaignDetail'
+import { Campaigns } from '@/pages/app/Campaigns'
 import { Dashboard } from '@/pages/app/Dashboard'
+import { InfluencerDetail } from '@/pages/app/InfluencerDetail'
+import { Influencers } from '@/pages/app/Influencers'
 import { Profile } from '@/pages/app/Profile'
 import { Profit } from '@/pages/app/Profit'
 import { Settings } from '@/pages/app/Settings'
@@ -55,6 +59,10 @@ export const router = createBrowserRouter([
               { path: 'dashboard', element: <Dashboard /> },
               { path: 'profit', element: <Profit /> },
               { path: 'ads', element: <Ads /> },
+              { path: 'campaigns', element: <Campaigns /> },
+              { path: 'campaigns/:campaignId', element: <CampaignDetail /> },
+              { path: 'influencers', element: <Influencers /> },
+              { path: 'influencers/:influencerId', element: <InfluencerDetail /> },
               { path: 'settings', element: <Settings /> },
               { path: 'profile', element: <Profile /> },
             ],

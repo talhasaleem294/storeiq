@@ -3,7 +3,9 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate, useParams } from 'react-router-dom'
 
 import { AdsIcon } from '@/components/ui/icons/AdsIcon'
+import { CampaignsIcon } from '@/components/ui/icons/CampaignsIcon'
 import { DashboardIcon } from '@/components/ui/icons/DashboardIcon'
+import { InfluencersIcon } from '@/components/ui/icons/InfluencersIcon'
 import { ProfitIcon } from '@/components/ui/icons/ProfitIcon'
 import { SettingsIcon } from '@/components/ui/icons/SettingsIcon'
 import { useAuth } from '@/hooks/useAuth'
@@ -23,10 +25,12 @@ interface NavItem {
 
 function getNavItems(workspaceId: string): NavItem[] {
   return [
-    { label: 'Dashboard', to: ROUTES.APP.DASHBOARD(workspaceId), icon: DashboardIcon, end: true },
-    { label: 'Profit', to: ROUTES.APP.PROFIT(workspaceId), icon: ProfitIcon },
-    { label: 'Ads', to: ROUTES.APP.ADS(workspaceId), icon: AdsIcon },
-    { label: 'Settings', to: ROUTES.APP.SETTINGS(workspaceId), icon: SettingsIcon },
+    { label: 'Dashboard',   to: ROUTES.APP.DASHBOARD(workspaceId),   icon: DashboardIcon, end: true },
+    { label: 'Profit',      to: ROUTES.APP.PROFIT(workspaceId),      icon: ProfitIcon },
+    { label: 'Ads',         to: ROUTES.APP.ADS(workspaceId),         icon: AdsIcon },
+    { label: 'Campaigns',   to: ROUTES.APP.CAMPAIGNS(workspaceId),   icon: CampaignsIcon },
+    { label: 'Influencers', to: ROUTES.APP.INFLUENCERS(workspaceId), icon: InfluencersIcon },
+    { label: 'Settings',    to: ROUTES.APP.SETTINGS(workspaceId),    icon: SettingsIcon },
   ]
 }
 

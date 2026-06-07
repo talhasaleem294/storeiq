@@ -7,7 +7,11 @@ interface ShopifyOrderNode {
   name: string
   totalPrice: string
   displayFinancialStatus: string
+  displayFulfillmentStatus: string
   createdAt: string
+  refunds: Array<{
+    transactions: Array<{ amountSet: { shopMoney: { amount: string } } }>
+  }>
 }
 
 interface GraphQLResponse {
@@ -30,7 +34,13 @@ const ORDERS_QUERY = `
           name
           totalPrice
           displayFinancialStatus
+          displayFulfillmentStatus
           createdAt
+          refunds {
+            transactions {
+              amountSet { shopMoney { amount } }
+            }
+          }
         }
       }
       pageInfo { hasNextPage endCursor }
@@ -104,14 +114,22 @@ Deno.serve(async (req) => {
     const orders = json.data?.orders.edges ?? []
     if (orders.length === 0) break
 
-    const rows = orders.map(({ node }) => ({
-      workspace_id: workspaceId,
-      // Shopify GQL id is "gid://shopify/Order/12345" — extract numeric ID
-      shopify_order_id: node.id.split('/').pop() ?? node.id,
-      revenue: parseFloat(node.totalPrice),
-      refund_amount: 0,
-      status: node.displayFinancialStatus.toLowerCase(),
-    }))
+    const rows = orders.map(({ node }) => {
+      const refundAmount = node.refunds.reduce(
+        (sum, r) => sum + r.transactions.reduce(
+          (s, t) => s + parseFloat(t.amountSet.shopMoney.amount), 0
+        ), 0
+      )
+      return {
+        workspace_id: workspaceId,
+        // Shopify GQL id is "gid://shopify/Order/12345" — extract numeric ID
+        shopify_order_id: node.id.split('/').pop() ?? node.id,
+        revenue: parseFloat(node.totalPrice),
+        refund_amount: refundAmount,
+        status: node.displayFinancialStatus.toLowerCase(),
+        fulfillment_status: node.displayFulfillmentStatus.toLowerCase(),
+      }
+    })
 
     await db
       .from('orders')

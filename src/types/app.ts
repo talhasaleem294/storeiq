@@ -79,6 +79,7 @@ export interface Order {
   revenue: number
   refund_amount: number
   status: string
+  fulfillment_status: string | null
   created_at: string
 }
 
@@ -109,4 +110,95 @@ export interface AdsDataTotals {
   totalSpend: number
   avgRoas: number
   avgCtr: number
+}
+
+// ── PR & Influencer Module ────────────────────────────────────
+
+export type InfluencerPlatform = 'instagram' | 'tiktok' | 'youtube' | 'facebook' | 'other'
+export const InfluencerPlatform = {
+  Instagram: 'instagram' as const,
+  TikTok:    'tiktok'    as const,
+  YouTube:   'youtube'   as const,
+  Facebook:  'facebook'  as const,
+  Other:     'other'     as const,
+}
+
+export type InfluencerNiche = 'fashion' | 'lifestyle' | 'beauty' | 'tech' | 'food' | 'other'
+
+export type ContentType =
+  | 'reel' | 'story' | 'feed_post' | 'tiktok'
+  | 'youtube_video' | 'youtube_short' | 'live' | 'other'
+
+export type DeliverableStatus = 'pending' | 'posted' | 'late' | 'no_show'
+
+export type PaymentMethod =
+  | 'bank_transfer' | 'easypaisa' | 'jazzcash' | 'cash' | 'barter' | 'other'
+
+export type CampaignStatus = 'planned' | 'active' | 'completed' | 'cancelled'
+
+export interface MarketingCampaign {
+  id:           string
+  workspace_id: string
+  name:         string
+  start_date:   string | null
+  end_date:     string | null
+  status:       CampaignStatus
+  notes:        string | null
+  created_at:   string
+}
+
+export interface Influencer {
+  id:             string
+  workspace_id:   string
+  name:           string
+  platform:       InfluencerPlatform | null
+  handle:         string | null
+  niche:          InfluencerNiche | null
+  follower_count: number | null
+  notes:          string | null
+  created_at:     string
+}
+
+export interface InfluencerDeal {
+  id:             string
+  workspace_id:   string
+  influencer_id:  string
+  campaign_id:    string | null
+  deal_date:      string
+  total_amount:   number
+  advance_paid:   number
+  balance_due:    number   // GENERATED ALWAYS AS — never include in INSERT/UPDATE payloads
+  product_value:  number
+  payment_method: PaymentMethod | null
+  promo_code:     string | null
+  notes:          string | null
+  created_at:     string
+}
+
+export interface InfluencerDeliverable {
+  id:           string
+  deal_id:      string
+  workspace_id: string
+  content_type: ContentType
+  amount:       number
+  due_date:     string | null
+  posted_at:    string | null
+  post_url:     string | null
+  status:       DeliverableStatus
+  notes:        string | null
+  created_at:   string
+}
+
+export interface CampaignAdLink {
+  id:                string
+  campaign_id:       string
+  workspace_id:      string
+  ads_campaign_id:   string
+  ads_campaign_name: string | null
+  created_at:        string
+}
+
+export interface DealWithDeliverables extends InfluencerDeal {
+  deliverables: InfluencerDeliverable[]
+  influencer:   Pick<Influencer, 'id' | 'name' | 'platform' | 'handle'>
 }

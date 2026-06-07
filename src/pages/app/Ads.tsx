@@ -87,6 +87,7 @@ export function Ads(): JSX.Element {
           body: JSON.stringify({ workspaceId }),
         }
       )
+      localStorage.setItem(`storeiq_last_meta_sync_${workspaceId}`, new Date().toISOString())
     })()
   }, [metaConn, workspaceId])
 

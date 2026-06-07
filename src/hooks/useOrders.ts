@@ -17,6 +17,8 @@ export interface OrderStats {
   prepaidRevenue: number
   codCount: number
   prepaidCount: number
+  rtoCount: number
+  rtoRevenue: number
 }
 
 interface SummaryRow {
@@ -24,6 +26,7 @@ interface SummaryRow {
   refund_amount: number
   status: string
   created_at: string
+  fulfillment_status: string | null
 }
 
 interface UseOrdersReturn {
@@ -55,6 +58,8 @@ function computeStats(allRows: SummaryRow[], dateRangeDays: number): OrderStats 
   let prepaidRevenue = 0
   let codCount = 0
   let prepaidCount = 0
+  let rtoCount = 0
+  let rtoRevenue = 0
 
   for (const row of allRows) {
     const ts = new Date(row.created_at).getTime()
@@ -81,6 +86,11 @@ function computeStats(allRows: SummaryRow[], dateRangeDays: number): OrderStats 
       prepaidRevenue += revenue
       prepaidCount += 1
     }
+
+    if (row.fulfillment_status === 'returned') {
+      rtoCount += 1
+      rtoRevenue += revenue
+    }
   }
 
   const bestDayIdx = dayRevenue.reduce((best, v, i) => (v > dayRevenue[best] ? i : best), 0)
@@ -99,6 +109,8 @@ function computeStats(allRows: SummaryRow[], dateRangeDays: number): OrderStats 
     prepaidRevenue,
     codCount,
     prepaidCount,
+    rtoCount,
+    rtoRevenue,
   }
 }
 
@@ -119,13 +131,13 @@ export function useOrders(workspaceId: string, dateRange?: DateRange, dateRangeD
     // Summary query — no limit, columns needed for profit math + temporal stats
     let summaryQ = supabase
       .from('orders')
-      .select('revenue, refund_amount, status, created_at')
+      .select('revenue, refund_amount, status, created_at, fulfillment_status')
       .eq('workspace_id', workspaceId)
 
     // Display query — paginated, all columns for the orders table
     let displayQ = supabase
       .from('orders')
-      .select('id, workspace_id, shopify_order_id, revenue, refund_amount, status, created_at')
+      .select('id, workspace_id, shopify_order_id, revenue, refund_amount, status, fulfillment_status, created_at')
       .eq('workspace_id', workspaceId)
       .order('created_at', { ascending: false })
       .limit(PAGINATION.DEFAULT_PAGE_SIZE)

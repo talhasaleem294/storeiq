@@ -37,6 +37,7 @@ Deno.serve(async (req) => {
       id: number
       total_price: string
       financial_status: string
+      fulfillment_status: string | null
     }
 
     await db.from('orders').upsert(
@@ -44,8 +45,9 @@ Deno.serve(async (req) => {
         workspace_id: workspaceId,
         shopify_order_id: String(order.id),
         revenue: parseFloat(order.total_price),
-        refund_amount: 0,
+        // refund_amount omitted: DB DEFAULT 0 on insert, preserved on update
         status: order.financial_status,
+        fulfillment_status: order.fulfillment_status ?? 'unfulfilled',
       },
       { onConflict: 'workspace_id,shopify_order_id' }
     )

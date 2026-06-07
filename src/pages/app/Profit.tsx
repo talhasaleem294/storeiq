@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useAdsData } from '@/hooks/useAdsData'
+import { useInfluencerSpend } from '@/hooks/useInfluencerSpend'
 import { useMetaConnection } from '@/hooks/useMetaConnection'
 import { useOrders } from '@/hooks/useOrders'
 import { useShopifyConnection } from '@/hooks/useShopifyConnection'
@@ -42,19 +43,22 @@ export function Profit(): JSX.Element {
   const dateRange = useMemo(() => getDateRange(selectedDays), [selectedDays])
   const { orders, summary, stats, loading: ordersLoading } = useOrders(workspaceId ?? '', dateRange, selectedDays)
   const { totals: adsTotals, loading: adsLoading } = useAdsData(workspaceId ?? '', dateRange)
+  const { totalCommittedSpend: influencerSpend, loading: influencerLoading } = useInfluencerSpend(workspaceId ?? '', dateRange)
 
   const isMetaConnected = !metaConnLoading && metaConn !== null
   const adSpend = isMetaConnected ? adsTotals.totalSpend : 0
-  const trueNetProfit = summary.netProfit - adSpend
+  const hasInfluencerSpend = influencerSpend > 0
+  const marketingSpend = adSpend + influencerSpend
+  const trueNetProfit = summary.netProfit - adSpend - influencerSpend
 
-  const loading = connLoading || ordersLoading || metaConnLoading || adsLoading
+  const loading = connLoading || ordersLoading || metaConnLoading || adsLoading || influencerLoading
   const isConnected = !connLoading && connection !== null
 
   // Key ratios
   const refundRate = summary.totalRevenue > 0 ? (summary.totalRefunds / summary.totalRevenue) * 100 : 0
   const profitMargin = summary.totalRevenue > 0 ? (trueNetProfit / summary.totalRevenue) * 100 : 0
-  const adSpendRatio = isMetaConnected && summary.totalRevenue > 0
-    ? (adSpend / summary.totalRevenue) * 100
+  const adSpendRatio = (isMetaConnected || hasInfluencerSpend) && summary.totalRevenue > 0
+    ? (marketingSpend / summary.totalRevenue) * 100
     : null
 
   // QW #1 — trend arrows
@@ -130,14 +134,14 @@ export function Profit(): JSX.Element {
       </div>
 
       {/* Summary cards — QW #1 trend arrows */}
-      <div className={`grid grid-cols-1 gap-4 ${isMetaConnected ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
+      <div className={`grid grid-cols-1 gap-4 ${(isMetaConnected || hasInfluencerSpend) ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
         <ProfitSummaryCard label="Revenue" value={formatCurrency(summary.totalRevenue)} trend={revenueTrend} loading={loading} />
         <ProfitSummaryCard label="Refunds" value={formatCurrency(summary.totalRefunds)} loading={loading} />
-        {isMetaConnected && (
-          <ProfitSummaryCard label="Ad Spend" value={formatCurrency(adSpend)} loading={loading} />
+        {(isMetaConnected || hasInfluencerSpend) && (
+          <ProfitSummaryCard label="Marketing Spend" value={formatCurrency(marketingSpend)} loading={loading} />
         )}
         <ProfitSummaryCard
-          label={isMetaConnected ? 'Net Profit (after ads)' : 'Net Profit'}
+          label={(isMetaConnected || hasInfluencerSpend) ? 'Net Profit (after marketing)' : 'Net Profit'}
           value={formatCurrency(trueNetProfit)}
           trend={profitTrend}
           loading={loading}
@@ -165,8 +169,16 @@ export function Profit(): JSX.Element {
           </div>
           {adSpendRatio !== null && (
             <div className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs">
-              <span className="text-text">Ad Spend Ratio</span>
+              <span className="text-text">Marketing Spend Ratio</span>
               <span className="font-semibold text-heading">{formatPercentage(adSpendRatio)}</span>
+            </div>
+          )}
+          {stats && stats.rtoCount > 0 && (
+            <div className="flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-xs dark:border-red-800 dark:bg-red-900/20">
+              <span className="text-red-700 dark:text-red-300">RTO</span>
+              <span className="font-semibold text-red-800 dark:text-red-200">{String(stats.rtoCount)} orders</span>
+              <span className="text-red-600 dark:text-red-400">·</span>
+              <span className="font-semibold text-red-800 dark:text-red-200">{formatCurrency(stats.rtoRevenue)} exposure</span>
             </div>
           )}
         </div>

@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useAdsData } from '@/hooks/useAdsData'
+import { useInfluencerSpend } from '@/hooks/useInfluencerSpend'
 import { useMetaConnection } from '@/hooks/useMetaConnection'
 import { useOrders } from '@/hooks/useOrders'
 import { useShopifyConnection } from '@/hooks/useShopifyConnection'
@@ -15,25 +16,42 @@ import { formatCurrency, formatPercentage } from '@/lib/formatters'
 
 const MILESTONES = [50_000, 100_000, 250_000, 500_000, 1_000_000, 2_500_000, 5_000_000]
 
+function formatSyncTime(iso: string | null): string {
+  if (!iso) return 'Never'
+  const diffMins = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000)
+  if (diffMins < 2) return 'just now'
+  if (diffMins < 60) return `${String(diffMins)} minutes ago`
+  const diffHours = Math.floor(diffMins / 60)
+  if (diffHours < 24) return `${String(diffHours)} hour${diffHours === 1 ? '' : 's'} ago`
+  const diffDays = Math.floor(diffHours / 24)
+  return `${String(diffDays)} day${diffDays === 1 ? '' : 's'} ago`
+}
+
 export function Dashboard(): JSX.Element {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { connection, loading: connLoading } = useShopifyConnection(workspaceId ?? '')
   const { connection: metaConn, loading: metaConnLoading } = useMetaConnection(workspaceId ?? '')
   const { orders, summary, stats, loading: ordersLoading } = useOrders(workspaceId ?? '', undefined, 30)
   const { totals: adsTotals, loading: adsLoading } = useAdsData(workspaceId ?? '')
+  const { totalCommittedSpend: influencerSpend, loading: influencerLoading } = useInfluencerSpend(workspaceId ?? '')
 
   const isMetaConnected = !metaConnLoading && metaConn !== null
   const adSpend = isMetaConnected ? adsTotals.totalSpend : 0
-  const trueNetProfit = summary.netProfit - adSpend
+  const hasInfluencerSpend = influencerSpend > 0
+  const trueNetProfit = summary.netProfit - adSpend - influencerSpend
 
-  const isLoading = connLoading || ordersLoading || metaConnLoading || adsLoading
+  const isLoading = connLoading || ordersLoading || metaConnLoading || adsLoading || influencerLoading
   const isConnected = !connLoading && connection !== null
+
+  const lastShopifySync = localStorage.getItem(`storeiq_last_shopify_sync_${workspaceId ?? ''}`)
+  const lastMetaSync = localStorage.getItem(`storeiq_last_meta_sync_${workspaceId ?? ''}`)
 
   // Key ratios
   const refundRate = summary.totalRevenue > 0 ? (summary.totalRefunds / summary.totalRevenue) * 100 : 0
   const profitMargin = summary.totalRevenue > 0 ? (trueNetProfit / summary.totalRevenue) * 100 : 0
-  const adSpendRatio = isMetaConnected && summary.totalRevenue > 0
-    ? (adSpend / summary.totalRevenue) * 100
+  const marketingSpend = adSpend + influencerSpend
+  const adSpendRatio = (isMetaConnected || hasInfluencerSpend) && summary.totalRevenue > 0
+    ? (marketingSpend / summary.totalRevenue) * 100
     : null
 
   // QW #1 — trend arrows (this week vs last week)
@@ -108,8 +126,34 @@ export function Dashboard(): JSX.Element {
         <p className="mt-0.5 text-sm text-text">Your profit overview at a glance.</p>
       </div>
 
+      {/* Connection health strip */}
+      {!isLoading && (isConnected || isMetaConnected) && (
+        <div className="flex flex-wrap gap-x-5 gap-y-1.5">
+          {isConnected && (
+            <span className="flex items-center gap-1.5 text-xs text-text">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+              <span className="font-medium text-heading">Shopify</span>
+              <span>·</span>
+              <span>{connection.shop_domain}</span>
+              <span>·</span>
+              <span>synced {formatSyncTime(lastShopifySync)}</span>
+            </span>
+          )}
+          {isMetaConnected && (
+            <span className="flex items-center gap-1.5 text-xs text-text">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+              <span className="font-medium text-heading">Meta Ads</span>
+              <span>·</span>
+              <span>{metaConn.ads_account_id}</span>
+              <span>·</span>
+              <span>synced {formatSyncTime(lastMetaSync)}</span>
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Summary cards — QW #1: trend arrows wired */}
-      <div className={`grid grid-cols-1 gap-4 ${isMetaConnected ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
+      <div className={`grid grid-cols-1 gap-4 ${(isMetaConnected || hasInfluencerSpend) ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
         <ProfitSummaryCard
           label="Total Revenue"
           value={formatCurrency(summary.totalRevenue)}
@@ -121,15 +165,15 @@ export function Dashboard(): JSX.Element {
           value={formatCurrency(summary.totalRefunds)}
           loading={isLoading}
         />
-        {isMetaConnected && (
+        {(isMetaConnected || hasInfluencerSpend) && (
           <ProfitSummaryCard
-            label="Ad Spend"
-            value={formatCurrency(adSpend)}
+            label="Marketing Spend"
+            value={formatCurrency(marketingSpend)}
             loading={isLoading}
           />
         )}
         <ProfitSummaryCard
-          label={isMetaConnected ? 'Net Profit (after ads)' : 'Net Profit'}
+          label={(isMetaConnected || hasInfluencerSpend) ? 'Net Profit (after marketing)' : 'Net Profit'}
           value={formatCurrency(trueNetProfit)}
           trend={profitTrend}
           loading={isLoading}
@@ -177,7 +221,7 @@ export function Dashboard(): JSX.Element {
           </div>
           {adSpendRatio !== null && (
             <div className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs">
-              <span className="text-text">Ad Spend Ratio</span>
+              <span className="text-text">Marketing Spend Ratio</span>
               <span className="font-semibold text-heading">{formatPercentage(adSpendRatio)}</span>
             </div>
           )}
@@ -191,6 +235,14 @@ export function Dashboard(): JSX.Element {
             <div className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs">
               <span className="text-text">Avg</span>
               <span className="font-semibold text-heading">{stats.ordersPerDay.toFixed(1)} orders/day</span>
+            </div>
+          )}
+          {stats && stats.rtoCount > 0 && (
+            <div className="flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-xs dark:border-red-800 dark:bg-red-900/20">
+              <span className="text-red-700 dark:text-red-300">RTO</span>
+              <span className="font-semibold text-red-800 dark:text-red-200">{String(stats.rtoCount)} orders</span>
+              <span className="text-red-600 dark:text-red-400">·</span>
+              <span className="font-semibold text-red-800 dark:text-red-200">{formatCurrency(stats.rtoRevenue)} exposure</span>
             </div>
           )}
         </div>

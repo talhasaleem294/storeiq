@@ -12,6 +12,7 @@ import { useShopifyConnection } from '@/hooks/useShopifyConnection'
 import { useWorkspaceRole } from '@/hooks/useWorkspaceRole'
 import { formatDate } from '@/lib/formatters'
 import { hasPermission } from '@/lib/permissions'
+import { supabase } from '@/lib/supabase'
 
 type ConnectMode = 'oauth' | 'token'
 
@@ -31,6 +32,8 @@ export function Settings(): JSX.Element {
   const [metaDisconnecting, setMetaDisconnecting] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
   const [showMetaSuccess, setShowMetaSuccess] = useState(false)
+  const [resyncing, setResyncing] = useState(false)
+  const [resyncMsg, setResyncMsg] = useState<'success' | 'error' | null>(null)
   const successClearedRef = useRef(false)
   const metaSuccessClearedRef = useRef(false)
 
@@ -38,13 +41,16 @@ export function Settings(): JSX.Element {
     if (searchParams.get('shopify') === 'connected' && !successClearedRef.current) {
       setShowSuccess(true)
       successClearedRef.current = true
+      if (workspaceId) {
+        localStorage.setItem(`storeiq_last_shopify_sync_${workspaceId}`, new Date().toISOString())
+      }
       const next = new URLSearchParams(searchParams)
       next.delete('shopify')
       setSearchParams(next, { replace: true })
       const timer = setTimeout(() => { setShowSuccess(false); }, 4000)
       return () => { clearTimeout(timer); }
     }
-  }, [searchParams, setSearchParams])
+  }, [searchParams, setSearchParams, workspaceId])
 
   useEffect(() => {
     if (searchParams.get('meta') === 'connected' && !metaSuccessClearedRef.current) {
@@ -84,6 +90,36 @@ export function Settings(): JSX.Element {
     }
   }
 
+  async function handleResync(): Promise<void> {
+    if (!workspaceId) return
+    setResyncing(true)
+    setResyncMsg(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(
+        `${String(import.meta.env.VITE_SUPABASE_URL)}/functions/v1/shopify-sync`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session?.access_token ?? ''}`,
+          },
+          body: JSON.stringify({ workspaceId }),
+        }
+      )
+      if (res.ok) {
+        localStorage.setItem(`storeiq_last_shopify_sync_${workspaceId}`, new Date().toISOString())
+        setResyncMsg('success')
+      } else {
+        setResyncMsg('error')
+      }
+    } catch {
+      setResyncMsg('error')
+    }
+    setResyncing(false)
+    setTimeout(() => { setResyncMsg(null); }, 4000)
+  }
+
   async function handleDisconnect(): Promise<void> {
     setDisconnecting(true)
     await disconnect()
@@ -95,6 +131,11 @@ export function Settings(): JSX.Element {
     await metaDisconnect()
     setMetaDisconnecting(false)
   }
+
+  const metaExpiresAt = metaConn?.token_expires_at ? new Date(metaConn.token_expires_at) : null
+  const metaDaysLeft = metaExpiresAt
+    ? Math.ceil((metaExpiresAt.getTime() - new Date().getTime()) / 86_400_000)
+    : null
 
   if (roleLoading) return <SkeletonPage />
 
@@ -177,14 +218,34 @@ export function Settings(): JSX.Element {
                 <span className="text-heading">{formatDate(connection.created_at)}</span>
               </div>
             </div>
-            <Button
-              variant="danger"
-              size="sm"
-              loading={disconnecting}
-              onClick={() => void handleDisconnect()}
-            >
-              Disconnect Shopify
-            </Button>
+            {resyncMsg === 'success' && (
+              <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300">
+                ✓ Sync started — orders updating in background
+              </div>
+            )}
+            {resyncMsg === 'error' && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                Sync failed. Please try again.
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={resyncing}
+                onClick={() => void handleResync()}
+              >
+                ↻ Re-sync Orders
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                loading={disconnecting}
+                onClick={() => void handleDisconnect()}
+              >
+                Disconnect Shopify
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="space-y-4">
@@ -306,6 +367,23 @@ export function Settings(): JSX.Element {
                 <span className="text-heading">{formatDate(metaConn.created_at)}</span>
               </div>
             </div>
+            {metaDaysLeft !== null && metaDaysLeft <= 14 && (
+              <div className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${
+                metaDaysLeft <= 0
+                  ? 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300'
+                  : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300'
+              }`}>
+                <span className="mt-0.5 shrink-0">{metaDaysLeft <= 0 ? '🔴' : '⚠️'}</span>
+                <span>
+                  {metaDaysLeft <= 0
+                    ? 'Your Meta token has expired. Reconnect to resume syncing.'
+                    : metaDaysLeft === 1
+                      ? 'Your Meta token expires tomorrow. Reconnect soon to avoid data loss.'
+                      : `Your Meta token expires in ${String(metaDaysLeft)} days. Reconnect soon.`
+                  }
+                </span>
+              </div>
+            )}
             <Button
               variant="danger"
               size="sm"

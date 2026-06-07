@@ -1,4 +1,4 @@
-import type { AdsData, Order } from '@/types/app'
+import type { AdsData, Influencer, InfluencerDeal, Order } from '@/types/app'
 
 function downloadCSV(filename: string, rows: string[][]): void {
   const csv = rows
@@ -23,6 +23,44 @@ export function exportOrdersCSV(orders: Order[]): void {
     new Date(o.created_at).toLocaleDateString('en-PK'),
   ])
   downloadCSV('storeiq-orders.csv', [headers, ...rows])
+}
+
+export function exportDealsCSV(
+  deals: InfluencerDeal[],
+  influencerMap: Map<string, string>,
+): void {
+  const headers = [
+    'Influencer', 'Deal Date', 'Total Amount (PKR)', 'Advance Paid (PKR)',
+    'Balance Due (PKR)', 'Product Value (PKR)', 'Payment Method', 'Promo Code', 'Notes',
+  ]
+  const rows = deals.map(d => [
+    influencerMap.get(d.influencer_id) ?? d.influencer_id,
+    d.deal_date,
+    d.total_amount.toFixed(2),
+    d.advance_paid.toFixed(2),
+    d.balance_due.toFixed(2),
+    d.product_value.toFixed(2),
+    d.payment_method ?? '',
+    d.promo_code ?? '',
+    d.notes ?? '',
+  ])
+  downloadCSV('storeiq-influencer-deals.csv', [headers, ...rows])
+}
+
+export function exportInfluencersCSV(
+  influencers: Array<Influencer & { totalSpend: number; dealCount: number }>,
+): void {
+  const headers = ['Name', 'Platform', 'Handle', 'Niche', 'Followers', 'Deals', 'Total Spend (PKR)']
+  const rows = influencers.map(inf => [
+    inf.name,
+    inf.platform ?? '',
+    inf.handle ?? '',
+    inf.niche ?? '',
+    inf.follower_count ? String(inf.follower_count) : '',
+    String(inf.dealCount),
+    inf.totalSpend.toFixed(2),
+  ])
+  downloadCSV('storeiq-influencers.csv', [headers, ...rows])
 }
 
 export function exportCampaignsCSV(campaigns: AdsData[]): void {

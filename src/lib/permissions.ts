@@ -4,6 +4,7 @@ export type Permission =
   | 'members:invite'
   | 'members:remove'
   | 'members:view'
+  | 'influencers:manage'
 
 export type WorkspaceMemberRole = 'owner' | 'admin' | 'supervisor'
 
@@ -21,6 +22,7 @@ const ROLE_PERMISSIONS: Record<WorkspaceMemberRole, ReadonlySet<Permission>> = {
     'members:invite',
     'members:remove',
     'members:view',
+    'influencers:manage',
   ]),
   admin: new Set([
     'settings:view',
@@ -28,6 +30,7 @@ const ROLE_PERMISSIONS: Record<WorkspaceMemberRole, ReadonlySet<Permission>> = {
     'members:invite',
     'members:remove',
     'members:view',
+    'influencers:manage',
   ]),
   supervisor: new Set([]),
 }

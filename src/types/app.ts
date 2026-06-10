@@ -27,6 +27,7 @@ export interface AdminWorkspace {
   subscription_status: SubscriptionStatus
   selected_plan: string | null
   created_at: string
+  trial_started_at: string | null
 }
 
 export interface WorkspaceMember {

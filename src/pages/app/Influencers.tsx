@@ -6,10 +6,11 @@ import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Input } from '@/components/ui/Input'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { useDeliverablesDueThisWeek } from '@/hooks/useDeliverablesDueThisWeek'
 import { useInfluencerData } from '@/hooks/useInfluencerData'
 import { useWorkspaceRole } from '@/hooks/useWorkspaceRole'
 import { ROUTES } from '@/lib/constants'
-import { formatCurrency } from '@/lib/formatters'
+import { formatCurrency, formatDate } from '@/lib/formatters'
 import { hasPermission } from '@/lib/permissions'
 import { supabase } from '@/lib/supabase'
 import type { InfluencerNiche, InfluencerPlatform } from '@/types/app'
@@ -39,12 +40,15 @@ function platformLabel(p: InfluencerPlatform | null): string {
 export function Influencers(): JSX.Element {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { influencers, insights, loading } = useInfluencerData(workspaceId ?? '')
+  const { deliverables: dueThisWeek } = useDeliverablesDueThisWeek(workspaceId ?? '')
   const { role } = useWorkspaceRole(workspaceId ?? '')
   const canManage = hasPermission(role, 'influencers:manage')
 
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+
+  const [search, setSearch] = useState('')
 
   const [name, setName] = useState('')
   const [platform, setPlatform] = useState<InfluencerPlatform | ''>('')
@@ -172,6 +176,63 @@ export function Influencers(): JSX.Element {
         </Card>
       )}
 
+      {/* Due This Week */}
+      {dueThisWeek.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-800 dark:bg-amber-900/10">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+            Due This Week
+          </p>
+          <div className="space-y-2">
+            {dueThisWeek.slice(0, 5).map(d => {
+              const today = new Date().toISOString().slice(0, 10)
+              const isOverdue = d.due_date < today
+              return (
+                <div key={d.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                  <span className="font-medium text-heading">{d.influencer_name}</span>
+                  {d.influencer_handle && (
+                    <span className="text-text">{d.influencer_handle}</span>
+                  )}
+                  <span className="capitalize text-text">{d.content_type.replace('_', ' ')}</span>
+                  <span className="text-text">{formatDate(d.due_date)}</span>
+                  <span className={`rounded-full px-2 py-0.5 font-medium ${
+                    isOverdue
+                      ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                      : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                  }`}>
+                    {isOverdue ? 'Overdue' : 'Due soon'}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+          {dueThisWeek.length > 5 && (
+            <p className="mt-2 text-xs text-text">{String(dueThisWeek.length - 5)} more deliverables due this week.</p>
+          )}
+        </div>
+      )}
+
+      {/* Search */}
+      {!loading && influencers.length > 0 && (
+        <div className="relative">
+          <input
+            type="text"
+            value={search}
+            onChange={e => { setSearch(e.target.value) }}
+            placeholder="Search by name, handle, or niche…"
+            className="w-full rounded-lg border border-border bg-bg px-3 py-2 pr-8 text-sm text-heading placeholder:text-text focus:outline-none focus:ring-2 focus:ring-accent"
+          />
+          {search && (
+            <button
+              onClick={() => { setSearch('') }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 flex min-h-[44px] min-w-[44px] items-center justify-center text-text hover:text-heading"
+              aria-label="Clear search"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Insights row */}
       {!loading && (
         <div className="flex flex-wrap gap-2">
@@ -209,18 +270,46 @@ export function Influencers(): JSX.Element {
       {/* Influencer Directory */}
       {loading ? (
         <Skeleton variant="table" />
-      ) : influencers.length === 0 ? (
-        <EmptyState
-          icon={
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-            </svg>
-          }
-          title="No influencers yet"
-          description="Add your first influencer to start tracking deals and deliverables."
-          action={canManage ? { label: '+ Add Influencer', onClick: () => { setShowForm(true) } } : undefined}
-        />
-      ) : (
+      ) : (() => {
+        const q = search.toLowerCase()
+        const filtered = search
+          ? influencers.filter(i =>
+              i.name.toLowerCase().includes(q) ||
+              (i.handle ?? '').toLowerCase().includes(q) ||
+              (i.niche ?? '').toLowerCase().includes(q)
+            )
+          : influencers
+
+        if (influencers.length === 0) {
+          return (
+            <EmptyState
+              icon={
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+                </svg>
+              }
+              title="No influencers yet"
+              description="Add your first influencer to start tracking deals and deliverables."
+              action={canManage ? { label: '+ Add Influencer', onClick: () => { setShowForm(true) } } : undefined}
+            />
+          )
+        }
+
+        if (filtered.length === 0) {
+          return (
+            <EmptyState
+              icon={
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+                </svg>
+              }
+              title="No influencers match your search"
+              description="Try a different name, handle, or niche."
+            />
+          )
+        }
+
+        return (
         <>
           {/* Desktop table */}
           <div className="hidden overflow-hidden rounded-xl border border-border md:block">
@@ -238,7 +327,7 @@ export function Influencers(): JSX.Element {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {influencers.map(inf => (
+                {filtered.map(inf => (
                   <tr key={inf.id} className="hover:bg-surface/50">
                     <td className="px-4 py-3 font-medium text-heading">{inf.name}</td>
                     <td className="px-4 py-3 text-text">{platformLabel(inf.platform)}</td>
@@ -267,7 +356,7 @@ export function Influencers(): JSX.Element {
 
           {/* Mobile cards */}
           <div className="space-y-3 md:hidden">
-            {influencers.map(inf => (
+            {filtered.map(inf => (
               <Card key={inf.id} padding="md">
                 <div className="flex items-start justify-between">
                   <div>
@@ -298,7 +387,8 @@ export function Influencers(): JSX.Element {
             ))}
           </div>
         </>
-      )}
+        )
+      })()}
     </div>
   )
 }

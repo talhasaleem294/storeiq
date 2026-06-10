@@ -50,6 +50,7 @@ export function Ads(): JSX.Element {
   const [page, setPage] = useState(0)
   const [usdToPkr, setUsdToPkr] = useState<number>(USD_TO_PKR_RATE)
   const [deadExpanded, setDeadExpanded] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const dateRange = useMemo(() => getDateRange(selectedDays), [selectedDays])
   const monthRange = useMemo(() => getMonthRange(), [])
 
@@ -101,6 +102,21 @@ export function Ads(): JSX.Element {
   const handleDaysChange = (days: number): void => {
     setSelectedDays(days)
     setPage(0)
+  }
+
+  async function handleExportCSV(): Promise<void> {
+    if (!workspaceId) return
+    setExporting(true)
+    let query = supabase
+      .from('ads_data')
+      .select('id, workspace_id, campaign_id, campaign_name, spend, roas, ctr, date, status')
+      .eq('workspace_id', workspaceId)
+      .order('spend', { ascending: false })
+    if (dateRange.from) query = query.gte('date', dateRange.from)
+    if (dateRange.to)   query = query.lte('date', dateRange.to)
+    const { data } = await query
+    if (data) exportCampaignsCSV(data)
+    setExporting(false)
   }
 
   const statusVariant = (s: string): 'success' | 'neutral' | 'error' => {
@@ -211,12 +227,13 @@ export function Ads(): JSX.Element {
             ))}
           </div>
 
-          {/* Export CSV (current page) */}
-          {!loading && campaigns.length > 0 && (
+          {/* Export CSV — fires a separate unlimited query so all campaigns are included */}
+          {!loading && totalCount > 0 && (
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => { exportCampaignsCSV(campaigns) }}
+              loading={exporting}
+              onClick={() => { void handleExportCSV() }}
             >
               Export CSV
             </Button>

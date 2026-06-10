@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { OrdersTable } from '@/components/features/OrdersTable'
@@ -43,6 +44,16 @@ export function Dashboard(): JSX.Element {
   const isLoading = connLoading || ordersLoading || metaConnLoading || adsLoading || influencerLoading
   const isConnected = !connLoading && connection !== null
 
+  const onboardingKey = `storeiq_onboarding_dismissed_${workspaceId ?? ''}`
+  const [onboardingDismissed, setOnboardingDismissed] = useState(
+    () => localStorage.getItem(onboardingKey) === '1'
+  )
+
+  function dismissOnboarding(): void {
+    localStorage.setItem(onboardingKey, '1')
+    setOnboardingDismissed(true)
+  }
+
   const lastShopifySync = localStorage.getItem(`storeiq_last_shopify_sync_${workspaceId ?? ''}`)
   const lastMetaSync = localStorage.getItem(`storeiq_last_meta_sync_${workspaceId ?? ''}`)
 
@@ -63,6 +74,11 @@ export function Dashboard(): JSX.Element {
   const profitTrend = stats && netProfitLastWeek > 0
     ? ((netProfitThisWeek - netProfitLastWeek) / netProfitLastWeek) * 100
     : undefined
+
+  // Task 7 — AOV + month-over-month
+  const momPct = stats && stats.lastMonthRevenue > 0
+    ? ((stats.thisMonthRevenue - stats.lastMonthRevenue) / stats.lastMonthRevenue) * 100
+    : null
 
   // QW #2 — milestone
   const nextTarget = MILESTONES.find(m => m > summary.totalRevenue) ?? 5_000_000
@@ -126,6 +142,67 @@ export function Dashboard(): JSX.Element {
         <p className="mt-0.5 text-sm text-text">Your profit overview at a glance.</p>
       </div>
 
+      {/* Onboarding checklist — shown to new users before Shopify is connected */}
+      {!isLoading && !isConnected && !onboardingDismissed && (
+        <Card padding="lg">
+          <div className="mb-4 flex items-start justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold text-heading">Get started with StoreIQ</h2>
+              <p className="mt-0.5 text-xs text-text">3 steps to see your real profit.</p>
+            </div>
+            <button
+              onClick={dismissOnboarding}
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-text hover:bg-surface hover:text-heading"
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+          <div className="space-y-1">
+            {/* Step 1 — Connect Shopify */}
+            <Link
+              to={workspaceId ? ROUTES.APP.SETTINGS(workspaceId) : '#'}
+              className="flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 hover:bg-surface transition-colors"
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-green-100 text-xs font-bold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                1
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-heading">Connect your Shopify store</p>
+                <p className="text-xs text-text">Sync orders, revenue, and refunds automatically.</p>
+              </div>
+              <span className="text-text shrink-0">→</span>
+            </Link>
+
+            {/* Step 2 — Connect Meta */}
+            <Link
+              to={workspaceId ? ROUTES.APP.SETTINGS(workspaceId) : '#'}
+              className="flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 hover:bg-surface transition-colors opacity-60"
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                2
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-heading">Connect Meta Ads</p>
+                <p className="text-xs text-text">Track ad spend and ROAS alongside your revenue.</p>
+              </div>
+              <span className="text-text shrink-0">→</span>
+            </Link>
+
+            {/* Step 3 — See profit */}
+            <div className="flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 opacity-40">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface text-xs font-bold text-text">
+                3
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-heading">See your real profit</p>
+                <p className="text-xs text-text">Revenue − Refunds − Ad Spend. Your true bottom line.</p>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* Connection health strip */}
       {!isLoading && (isConnected || isMetaConnected) && (
         <div className="flex flex-wrap gap-x-5 gap-y-1.5">
@@ -178,6 +255,7 @@ export function Dashboard(): JSX.Element {
           trend={profitTrend}
           loading={isLoading}
           highlight
+          sparklineData={stats?.netProfitByDay}
         />
       </div>
 
@@ -243,6 +321,20 @@ export function Dashboard(): JSX.Element {
               <span className="font-semibold text-red-800 dark:text-red-200">{String(stats.rtoCount)} orders</span>
               <span className="text-red-600 dark:text-red-400">·</span>
               <span className="font-semibold text-red-800 dark:text-red-200">{formatCurrency(stats.rtoRevenue)} exposure</span>
+            </div>
+          )}
+          {stats && stats.orderCount > 0 && (
+            <div className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs">
+              <span className="text-text">Avg Order Value</span>
+              <span className="font-semibold text-heading">{formatCurrency(summary.totalRevenue / stats.orderCount)}</span>
+            </div>
+          )}
+          {momPct !== null && (
+            <div className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs">
+              <span className="text-text">vs Last Month</span>
+              <span className={`font-semibold ${momPct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {momPct >= 0 ? '↑' : '↓'} {Math.abs(momPct).toFixed(1)}%
+              </span>
             </div>
           )}
         </div>

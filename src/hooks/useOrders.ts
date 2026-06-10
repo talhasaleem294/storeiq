@@ -19,6 +19,12 @@ export interface OrderStats {
   prepaidCount: number
   rtoCount: number
   rtoRevenue: number
+  // Task 7 — AOV + month-over-month
+  orderCount: number
+  thisMonthRevenue: number
+  lastMonthRevenue: number
+  // Task 6 — sparkline: 7 entries, index 0 = 6 days ago, index 6 = today
+  netProfitByDay: number[]
 }
 
 interface SummaryRow {
@@ -43,14 +49,21 @@ const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 
 function computeStats(allRows: SummaryRow[], dateRangeDays: number): OrderStats {
   const now = Date.now()
+  const nowDate = new Date()
   const oneDay = 86_400_000
   const thisWeekCutoff = now - 7 * oneDay
   const lastWeekCutoff = now - 14 * oneDay
+
+  // Month boundaries for MoM comparison
+  const thisMonthStart = new Date(nowDate.getFullYear(), nowDate.getMonth(), 1).getTime()
+  const lastMonthStart = new Date(nowDate.getFullYear(), nowDate.getMonth() - 1, 1).getTime()
 
   let thisWeekRevenue = 0
   let lastWeekRevenue = 0
   let thisWeekRefunds = 0
   let lastWeekRefunds = 0
+  let thisMonthRevenue = 0
+  let lastMonthRevenue = 0
 
   const dayRevenue = new Array<number>(7).fill(0)
   const hourlyCounts = new Array<number>(24).fill(0)
@@ -60,6 +73,14 @@ function computeStats(allRows: SummaryRow[], dateRangeDays: number): OrderStats 
   let prepaidCount = 0
   let rtoCount = 0
   let rtoRevenue = 0
+
+  // 7-day profit sparkline: map keyed by YYYY-MM-DD
+  const profitByDay = new Map<string, number>()
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(nowDate)
+    d.setDate(d.getDate() - i)
+    profitByDay.set(d.toISOString().slice(0, 10), 0)
+  }
 
   for (const row of allRows) {
     const ts = new Date(row.created_at).getTime()
@@ -72,6 +93,12 @@ function computeStats(allRows: SummaryRow[], dateRangeDays: number): OrderStats 
     } else if (ts >= lastWeekCutoff) {
       lastWeekRevenue += revenue
       lastWeekRefunds += refund
+    }
+
+    if (ts >= thisMonthStart) {
+      thisMonthRevenue += revenue
+    } else if (ts >= lastMonthStart) {
+      lastMonthRevenue += revenue
     }
 
     const d = new Date(row.created_at)
@@ -90,6 +117,12 @@ function computeStats(allRows: SummaryRow[], dateRangeDays: number): OrderStats 
     if (row.fulfillment_status === 'returned') {
       rtoCount += 1
       rtoRevenue += revenue
+    }
+
+    // Sparkline accumulation
+    const dayKey = row.created_at.slice(0, 10)
+    if (profitByDay.has(dayKey)) {
+      profitByDay.set(dayKey, (profitByDay.get(dayKey) ?? 0) + revenue - refund)
     }
   }
 
@@ -111,6 +144,10 @@ function computeStats(allRows: SummaryRow[], dateRangeDays: number): OrderStats 
     prepaidCount,
     rtoCount,
     rtoRevenue,
+    orderCount: allRows.length,
+    thisMonthRevenue,
+    lastMonthRevenue,
+    netProfitByDay: [...profitByDay.values()],
   }
 }
 

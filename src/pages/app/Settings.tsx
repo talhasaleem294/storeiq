@@ -137,6 +137,11 @@ export function Settings(): JSX.Element {
     ? Math.ceil((metaExpiresAt.getTime() - new Date().getTime()) / 86_400_000)
     : null
 
+  const shopifyExpiresAt = connection?.token_expires_at ? new Date(connection.token_expires_at) : null
+  const shopifyDaysLeft = shopifyExpiresAt
+    ? Math.ceil((shopifyExpiresAt.getTime() - new Date().getTime()) / 86_400_000)
+    : null
+
   if (roleLoading) return <SkeletonPage />
 
   if (!hasPermission(role, 'settings:view')) {
@@ -218,6 +223,23 @@ export function Settings(): JSX.Element {
                 <span className="text-heading">{formatDate(connection.created_at)}</span>
               </div>
             </div>
+            {shopifyDaysLeft !== null && shopifyDaysLeft <= 14 && (
+              <div className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${
+                shopifyDaysLeft <= 0
+                  ? 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300'
+                  : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300'
+              }`}>
+                <span className="mt-0.5 shrink-0">{shopifyDaysLeft <= 0 ? '🔴' : '⚠️'}</span>
+                <span>
+                  {shopifyDaysLeft <= 0
+                    ? 'Your Shopify token has expired. Reconnect to resume syncing.'
+                    : shopifyDaysLeft === 1
+                      ? 'Your Shopify token expires tomorrow. Reconnect soon to avoid data loss.'
+                      : `Your Shopify token expires in ${String(shopifyDaysLeft)} days. Reconnect soon.`
+                  }
+                </span>
+              </div>
+            )}
             {resyncMsg === 'success' && (
               <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300">
                 ✓ Sync started — orders updating in background

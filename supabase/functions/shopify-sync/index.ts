@@ -98,6 +98,13 @@ Deno.serve(async (req) => {
       body: JSON.stringify({ query: ORDERS_QUERY, variables }),
     })
 
+    if (res.status === 429) {
+      const retryAfter = parseInt(res.headers.get('Retry-After') ?? '2', 10)
+      console.warn(`[shopify-sync] rate limited, retrying after ${String(retryAfter)}s`)
+      await new Promise((r) => setTimeout(r, retryAfter * 1000))
+      continue
+    }
+
     if (!res.ok) {
       const errText = await res.text()
       console.error(`[shopify-sync] GraphQL error ${res.status}:`, errText)

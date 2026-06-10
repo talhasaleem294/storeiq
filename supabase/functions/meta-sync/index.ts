@@ -83,6 +83,20 @@ Deno.serve(async (req) => {
         break
       }
 
+      // Check Meta ad account rate limit budget — bail early before getting throttled
+      const usageHeader = res.headers.get('x-ad-account-usage')
+      if (usageHeader) {
+        try {
+          const usage = JSON.parse(usageHeader) as { call_count?: number }
+          if ((usage.call_count ?? 0) > 80) {
+            console.warn(`[meta-sync] ad account usage at ${String(usage.call_count)}% — stopping early to avoid throttle`)
+            break
+          }
+        } catch {
+          // non-fatal — header parse failed, continue
+        }
+      }
+
       const json = await res.json() as {
         data?: Array<{
           campaign_id: string

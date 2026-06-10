@@ -44,6 +44,7 @@ export function Campaigns(): JSX.Element {
   const canManage = hasPermission(role, 'influencers:manage')
 
   const [statusFilter, setStatusFilter] = useState<CampaignStatus | 'all'>('all')
+  const [search, setSearch] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -54,9 +55,9 @@ export function Campaigns(): JSX.Element {
   const [campStatus, setCampStatus] = useState<CampaignStatus>('planned')
   const [campNotes, setCampNotes] = useState('')
 
-  const filtered: MarketingCampaign[] = statusFilter === 'all'
-    ? campaigns
-    : campaigns.filter(c => c.status === statusFilter)
+  const filtered: MarketingCampaign[] = campaigns
+    .filter(c => statusFilter === 'all' || c.status === statusFilter)
+    .filter(c => !search || c.name.toLowerCase().includes(search.toLowerCase()))
 
   function resetForm(): void {
     setCampName('')
@@ -152,6 +153,28 @@ export function Campaigns(): JSX.Element {
         </Card>
       )}
 
+      {/* Search */}
+      {!loading && campaigns.length > 0 && (
+        <div className="relative">
+          <input
+            type="text"
+            value={search}
+            onChange={e => { setSearch(e.target.value) }}
+            placeholder="Search campaigns…"
+            className="w-full rounded-lg border border-border bg-bg px-3 py-2 pr-8 text-sm text-heading placeholder:text-text focus:outline-none focus:ring-2 focus:ring-accent"
+          />
+          {search && (
+            <button
+              onClick={() => { setSearch('') }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 flex min-h-[44px] min-w-[44px] items-center justify-center text-text hover:text-heading"
+              aria-label="Clear search"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Status filter tabs */}
       <div className="flex overflow-hidden rounded-lg border border-border">
         {STATUS_FILTERS.map(f => (
@@ -178,9 +201,9 @@ export function Campaigns(): JSX.Element {
               <path d="M3 11l19-9-9 19-2-8-8-2z" />
             </svg>
           }
-          title={statusFilter === 'all' ? 'No campaigns yet' : `No ${statusFilter} campaigns`}
-          description={statusFilter === 'all' ? 'Create a campaign to group your influencer deals and Meta ads.' : ''}
-          action={canManage && statusFilter === 'all' ? { label: '+ New Campaign', onClick: () => { setShowForm(true) } } : undefined}
+          title={search ? 'No campaigns match your search' : statusFilter === 'all' ? 'No campaigns yet' : `No ${statusFilter} campaigns`}
+          description={search ? 'Try a different search term.' : statusFilter === 'all' ? 'Create a campaign to group your influencer deals and Meta ads.' : ''}
+          action={canManage && !search && statusFilter === 'all' ? { label: '+ New Campaign', onClick: () => { setShowForm(true) } } : undefined}
         />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useAdsData } from '@/hooks/useAdsData'
+import { useCityAndCustomerStats } from '@/hooks/useCityAndCustomerStats'
 import { useInfluencerSpend } from '@/hooks/useInfluencerSpend'
 import { useMetaConnection } from '@/hooks/useMetaConnection'
 import { useOrders } from '@/hooks/useOrders'
@@ -45,6 +46,7 @@ export function Profit(): JSX.Element {
   const { orders, summary, stats, totalCount, loading: ordersLoading } = useOrders(workspaceId ?? '', dateRange, selectedDays, ordersPage)
   const { totals: adsTotals, loading: adsLoading } = useAdsData(workspaceId ?? '', dateRange)
   const { totalCommittedSpend: influencerSpend, loading: influencerLoading } = useInfluencerSpend(workspaceId ?? '', dateRange)
+  const { cityRows, customerStats, loading: cityLoading } = useCityAndCustomerStats(workspaceId ?? '', dateRange)
 
   // Reset to page 0 whenever the date range changes
   useEffect(() => { setOrdersPage(0) }, [selectedDays])
@@ -55,7 +57,7 @@ export function Profit(): JSX.Element {
   const marketingSpend = adSpend + influencerSpend
   const trueNetProfit = summary.netProfit - adSpend - influencerSpend
 
-  const loading = connLoading || ordersLoading || metaConnLoading || adsLoading || influencerLoading
+  const loading = connLoading || ordersLoading || metaConnLoading || adsLoading || influencerLoading || cityLoading
   const isConnected = !connLoading && connection !== null
 
   // Key ratios
@@ -225,6 +227,110 @@ export function Profit(): JSX.Element {
               )
             })}
           </div>
+        </Card>
+      )}
+
+      {/* City Breakdown */}
+      {!loading && cityRows.length > 0 && (
+        <Card padding="md">
+          <h3 className="mb-4 text-sm font-semibold text-heading">Revenue by City</h3>
+
+          {/* Desktop table */}
+          <div className="hidden sm:block overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs text-text">
+                  <th className="pb-2 font-medium">City</th>
+                  <th className="pb-2 font-medium text-right">Orders</th>
+                  <th className="pb-2 font-medium text-right">Revenue</th>
+                  <th className="pb-2 font-medium text-right">RTO</th>
+                  <th className="pb-2 font-medium text-right">RTO Rate</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {cityRows.slice(0, 10).map(row => (
+                  <tr key={row.city} className="text-sm">
+                    <td className="py-2 font-medium text-heading">{row.city}</td>
+                    <td className="py-2 text-right text-text">{String(row.orderCount)}</td>
+                    <td className="py-2 text-right text-text">{formatCurrency(row.revenue)}</td>
+                    <td className="py-2 text-right text-text">{String(row.rtoCount)}</td>
+                    <td className="py-2 text-right">
+                      <span className={`font-semibold ${
+                        row.rtoRate > 12 ? 'text-red-600' :
+                        row.rtoRate > 5  ? 'text-amber-600' :
+                                           'text-green-600'
+                      }`}>
+                        {row.rtoRate.toFixed(1)}%
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile cards */}
+          <div className="space-y-2 sm:hidden">
+            {cityRows.slice(0, 10).map(row => (
+              <div key={row.city} className="flex items-center justify-between rounded-lg border border-border p-3">
+                <div>
+                  <p className="text-sm font-medium text-heading">{row.city}</p>
+                  <p className="text-xs text-text">{String(row.orderCount)} orders · {formatCurrency(row.revenue)}</p>
+                </div>
+                <div className="text-right">
+                  <p className={`text-sm font-semibold ${
+                    row.rtoRate > 12 ? 'text-red-600' :
+                    row.rtoRate > 5  ? 'text-amber-600' :
+                                       'text-green-600'
+                  }`}>
+                    {row.rtoRate.toFixed(1)}% RTO
+                  </p>
+                  <p className="text-xs text-text">{String(row.rtoCount)} returned</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {cityRows.length > 10 && (
+            <p className="mt-3 text-xs text-text">and {String(cityRows.length - 10)} more cities</p>
+          )}
+        </Card>
+      )}
+
+      {/* Customer Insights */}
+      {!loading && customerStats !== null && (
+        <Card padding="md">
+          <h3 className="mb-4 text-sm font-semibold text-heading">Customer Insights</h3>
+
+          {/* Repeat rate chips */}
+          <div className="mb-4 flex flex-wrap gap-2">
+            <div className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs">
+              <span className="text-text">Repeat Customers</span>
+              <span className="font-semibold text-heading">{formatPercentage(customerStats.repeatRate)}</span>
+            </div>
+            <div className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs">
+              <span className="text-text">Repeat Revenue</span>
+              <span className="font-semibold text-heading">{formatPercentage(customerStats.repeatRevenuePct)}</span>
+            </div>
+          </div>
+
+          {/* Top customers */}
+          {customerStats.topCustomers.length > 0 && (
+            <>
+              <p className="mb-2 text-xs font-medium text-text">Top Customers by Spend</p>
+              <div className="space-y-1">
+                {customerStats.topCustomers.map((c, i) => (
+                  <div key={i} className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+                    <p className="text-sm text-heading">{c.email ?? 'Guest'}</p>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-heading">{formatCurrency(c.totalSpend)}</p>
+                      <p className="text-xs text-text">{String(c.orderCount)} orders</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </Card>
       )}
 

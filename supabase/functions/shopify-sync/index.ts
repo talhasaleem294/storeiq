@@ -9,6 +9,8 @@ interface ShopifyOrderNode {
   displayFinancialStatus: string
   displayFulfillmentStatus: string
   createdAt: string
+  shippingAddress: { city: string } | null
+  customer: { id: string; email: string } | null
   refunds: Array<{
     transactions: Array<{ amountSet: { shopMoney: { amount: string } } }>
   }>
@@ -36,6 +38,8 @@ const ORDERS_QUERY = `
           displayFinancialStatus
           displayFulfillmentStatus
           createdAt
+          shippingAddress { city }
+          customer { id email }
           refunds {
             transactions {
               amountSet { shopMoney { amount } }
@@ -135,6 +139,9 @@ Deno.serve(async (req) => {
         refund_amount: refundAmount,
         status: node.displayFinancialStatus.toLowerCase(),
         fulfillment_status: node.displayFulfillmentStatus.toLowerCase(),
+        city:           node.shippingAddress?.city ?? null,
+        customer_id:    node.customer?.id.split('/').pop() ?? null,
+        customer_email: node.customer?.email ?? null,
       }
     })
 

@@ -523,26 +523,29 @@ export function Ads(): JSX.Element {
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="mt-4 flex items-center justify-center gap-3">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => { setPage((p) => p - 1) }}
-                  disabled={page === 0}
-                >
-                  Previous
-                </Button>
+              <div className="mt-4 flex flex-col items-center gap-2">
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={() => { setPage((p) => p - 1) }}
+                    disabled={page === 0}
+                    className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded-lg border border-border bg-bg text-sm text-heading transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    ←
+                  </button>
+                  <span className="text-xs text-text">
+                    {String(page + 1)} of {String(totalPages)}
+                  </span>
+                  <button
+                    onClick={() => { setPage((p) => p + 1) }}
+                    disabled={page >= totalPages - 1}
+                    className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded-lg border border-border bg-bg text-sm text-heading transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    →
+                  </button>
+                </div>
                 <span className="text-xs text-text">
-                  Page {String(page + 1)} of {String(totalPages)}
+                  {String(page * PAGINATION.DEFAULT_PAGE_SIZE + 1)}–{String(Math.min((page + 1) * PAGINATION.DEFAULT_PAGE_SIZE, totalCount))} of {String(totalCount)} campaigns
                 </span>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => { setPage((p) => p + 1) }}
-                  disabled={page >= totalPages - 1}
-                >
-                  Next
-                </Button>
               </div>
             )}
           </>

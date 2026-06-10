@@ -3,10 +3,28 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { CampaignAdLink, InfluencerDeal, MarketingCampaign } from '@/types/app'
 
+export interface DealWithInfluencer extends InfluencerDeal {
+  influencer_name: string
+  influencer_handle: string | null
+}
+
+export interface DeliverableStats {
+  posted: number
+  pending: number
+  late: number
+  no_show: number
+  total: number
+}
+
+interface RawDealRow extends Omit<InfluencerDeal, 'influencer_name' | 'influencer_handle'> {
+  influencers: { name: string; handle: string | null }
+}
+
 interface UseCampaignDetailReturn {
   campaign: MarketingCampaign | null
-  deals: InfluencerDeal[]
+  deals: DealWithInfluencer[]
   adLinks: CampaignAdLink[]
+  deliverableStats: DeliverableStats
   totalInfluencerSpend: number
   totalMetaSpend: number
   loading: boolean
@@ -14,13 +32,16 @@ interface UseCampaignDetailReturn {
   refetch: () => void
 }
 
+const EMPTY_STATS: DeliverableStats = { posted: 0, pending: 0, late: 0, no_show: 0, total: 0 }
+
 export function useCampaignDetail(
   workspaceId: string,
   campaignId: string,
 ): UseCampaignDetailReturn {
   const [campaign, setCampaign] = useState<MarketingCampaign | null>(null)
-  const [deals, setDeals] = useState<InfluencerDeal[]>([])
+  const [deals, setDeals] = useState<DealWithInfluencer[]>([])
   const [adLinks, setAdLinks] = useState<CampaignAdLink[]>([])
+  const [deliverableStats, setDeliverableStats] = useState<DeliverableStats>(EMPTY_STATS)
   const [totalInfluencerSpend, setTotalInfluencerSpend] = useState(0)
   const [totalMetaSpend, setTotalMetaSpend] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -46,7 +67,8 @@ export function useCampaignDetail(
       .select(`
         id, workspace_id, influencer_id, campaign_id, deal_date,
         total_amount, advance_paid, balance_due, product_value,
-        payment_method, promo_code, notes, created_at
+        payment_method, promo_code, notes, created_at,
+        influencers!inner(name, handle)
       `)
       .eq('campaign_id', campaignId)
       .eq('workspace_id', workspaceId)
@@ -69,30 +91,64 @@ export function useCampaignDetail(
           return
         }
 
-        const rawDeals = (dealRes.data ?? []) as InfluencerDeal[]
+        const rawDeals = (dealRes.data ?? []) as unknown as RawDealRow[]
         const rawLinks = (linkRes.data ?? []) as CampaignAdLink[]
 
-        const influencerTotal = rawDeals.reduce(
+        const mappedDeals: DealWithInfluencer[] = rawDeals.map(row => ({
+          id:             row.id,
+          workspace_id:   row.workspace_id,
+          influencer_id:  row.influencer_id,
+          campaign_id:    row.campaign_id,
+          deal_date:      row.deal_date,
+          total_amount:   row.total_amount,
+          advance_paid:   row.advance_paid,
+          balance_due:    row.balance_due,
+          product_value:  row.product_value,
+          payment_method: row.payment_method,
+          promo_code:     row.promo_code,
+          notes:          row.notes,
+          created_at:     row.created_at,
+          influencer_name:   row.influencers.name,
+          influencer_handle: row.influencers.handle,
+        }))
+
+        const influencerTotal = mappedDeals.reduce(
           (sum, d) => sum + d.total_amount + d.product_value, 0
         )
 
-        // Pull Meta spend for linked campaigns
-        let metaTotal = 0
-        if (rawLinks.length > 0) {
-          const linkedIds = rawLinks.map(l => l.ads_campaign_id)
-          const { data: adsRows } = await supabase
-            .from('ads_data')
-            .select('spend')
-            .eq('workspace_id', workspaceId)
-            .in('campaign_id', linkedIds)
-          metaTotal = ((adsRows ?? []) as { spend: number }[]).reduce(
-            (sum, r) => sum + r.spend, 0
-          )
-        }
+        // Fetch deliverables + Meta spend in parallel (both need deal/link IDs from above)
+        const dealIds = mappedDeals.map(d => d.id)
+        const linkedIds = rawLinks.map(l => l.ads_campaign_id)
+
+        const [deliverablesRes, adsRes] = await Promise.all([
+          dealIds.length > 0
+            ? supabase.from('influencer_deliverables').select('status').in('deal_id', dealIds)
+            : Promise.resolve({ data: [], error: null }),
+          linkedIds.length > 0
+            ? supabase.from('ads_data').select('spend').eq('workspace_id', workspaceId).in('campaign_id', linkedIds)
+            : Promise.resolve({ data: [], error: null }),
+        ])
+
+        if (cancelled as boolean) return
+
+        const stats = ((deliverablesRes.data ?? []) as { status: string }[]).reduce<DeliverableStats>(
+          (acc, row) => {
+            const s = row.status as keyof Omit<DeliverableStats, 'total'>
+            if (s in acc) acc[s] += 1
+            acc.total += 1
+            return acc
+          },
+          { posted: 0, pending: 0, late: 0, no_show: 0, total: 0 }
+        )
+
+        const metaTotal = ((adsRes.data ?? []) as { spend: number }[]).reduce(
+          (sum, r) => sum + r.spend, 0
+        )
 
         setCampaign(campRes.data)
-        setDeals(rawDeals)
+        setDeals(mappedDeals)
         setAdLinks(rawLinks)
+        setDeliverableStats(stats)
         setTotalInfluencerSpend(influencerTotal)
         setTotalMetaSpend(metaTotal)
         setLoading(false)
@@ -106,6 +162,7 @@ export function useCampaignDetail(
     campaign,
     deals,
     adLinks,
+    deliverableStats,
     totalInfluencerSpend,
     totalMetaSpend,
     loading,

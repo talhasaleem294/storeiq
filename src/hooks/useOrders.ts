@@ -39,6 +39,7 @@ interface UseOrdersReturn {
   orders: Order[]
   summary: OrdersSummary
   stats: OrderStats | null
+  totalCount: number
   loading: boolean
   error: string | null
 }
@@ -151,10 +152,11 @@ function computeStats(allRows: SummaryRow[], dateRangeDays: number): OrderStats 
   }
 }
 
-export function useOrders(workspaceId: string, dateRange?: DateRange, dateRangeDays = 30): UseOrdersReturn {
+export function useOrders(workspaceId: string, dateRange?: DateRange, dateRangeDays = 30, page = 0): UseOrdersReturn {
   const [orders, setOrders] = useState<Order[]>([])
   const [summary, setSummary] = useState<OrdersSummary>(EMPTY_SUMMARY)
   const [stats, setStats] = useState<OrderStats | null>(null)
+  const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -172,12 +174,14 @@ export function useOrders(workspaceId: string, dateRange?: DateRange, dateRangeD
       .eq('workspace_id', workspaceId)
 
     // Display query — paginated, all columns for the orders table
+    const from = page * PAGINATION.DEFAULT_PAGE_SIZE
+    const to = from + PAGINATION.DEFAULT_PAGE_SIZE - 1
     let displayQ = supabase
       .from('orders')
       .select('id, workspace_id, shopify_order_id, revenue, refund_amount, status, fulfillment_status, created_at')
       .eq('workspace_id', workspaceId)
       .order('created_at', { ascending: false })
-      .limit(PAGINATION.DEFAULT_PAGE_SIZE)
+      .range(from, to)
 
     if (dateRange?.from) {
       summaryQ = summaryQ.gte('created_at', dateRange.from)
@@ -210,6 +214,7 @@ export function useOrders(workspaceId: string, dateRange?: DateRange, dateRangeD
         )
         setSummary(computed)
         setStats(allRows.length > 0 ? computeStats(allRows, dateRangeDays) : null)
+        setTotalCount(allRows.length)
         setOrders(displayRes.data ?? [])
       }
       setLoading(false)
@@ -218,7 +223,7 @@ export function useOrders(workspaceId: string, dateRange?: DateRange, dateRangeD
     return () => {
       cancelled = true
     }
-  }, [workspaceId, dateRange?.from, dateRange?.to, dateRangeDays])
+  }, [workspaceId, dateRange?.from, dateRange?.to, dateRangeDays, page])
 
-  return { orders, summary, stats, loading, error }
+  return { orders, summary, stats, totalCount, loading, error }
 }

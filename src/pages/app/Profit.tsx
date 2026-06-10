@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { OrdersTable } from '@/components/features/OrdersTable'
@@ -40,10 +40,14 @@ export function Profit(): JSX.Element {
   const { connection, loading: connLoading } = useShopifyConnection(workspaceId ?? '')
   const { connection: metaConn, loading: metaConnLoading } = useMetaConnection(workspaceId ?? '')
   const [selectedDays, setSelectedDays] = useState<number>(30)
+  const [ordersPage, setOrdersPage] = useState(0)
   const dateRange = useMemo(() => getDateRange(selectedDays), [selectedDays])
-  const { orders, summary, stats, loading: ordersLoading } = useOrders(workspaceId ?? '', dateRange, selectedDays)
+  const { orders, summary, stats, totalCount, loading: ordersLoading } = useOrders(workspaceId ?? '', dateRange, selectedDays, ordersPage)
   const { totals: adsTotals, loading: adsLoading } = useAdsData(workspaceId ?? '', dateRange)
   const { totalCommittedSpend: influencerSpend, loading: influencerLoading } = useInfluencerSpend(workspaceId ?? '', dateRange)
+
+  // Reset to page 0 whenever the date range changes
+  useEffect(() => { setOrdersPage(0) }, [selectedDays])
 
   const isMetaConnected = !metaConnLoading && metaConn !== null
   const adSpend = isMetaConnected ? adsTotals.totalSpend : 0
@@ -228,9 +232,9 @@ export function Profit(): JSX.Element {
       <div>
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold text-heading">
-            Orders ({String(orders.length)})
+            Orders ({String(totalCount)})
           </h2>
-          {!loading && orders.length > 0 && (
+          {!loading && totalCount > 0 && (
             <Button
               variant="secondary"
               size="sm"
@@ -240,7 +244,14 @@ export function Profit(): JSX.Element {
             </Button>
           )}
         </div>
-        <OrdersTable orders={orders} loading={loading} />
+        <OrdersTable
+          orders={orders}
+          loading={loading}
+          totalCount={totalCount}
+          page={ordersPage}
+          pageSize={10}
+          onPageChange={setOrdersPage}
+        />
       </div>
     </div>
   )

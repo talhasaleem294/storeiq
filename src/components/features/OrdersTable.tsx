@@ -8,6 +8,10 @@ import type { Order } from '@/types/app'
 interface OrdersTableProps {
   orders: Order[]
   loading: boolean
+  totalCount?: number
+  page?: number
+  pageSize?: number
+  onPageChange?: (page: number) => void
 }
 
 function statusVariant(status: string): 'success' | 'warning' | 'error' | 'neutral' {
@@ -17,8 +21,14 @@ function statusVariant(status: string): 'success' | 'warning' | 'error' | 'neutr
   return 'neutral'
 }
 
-export function OrdersTable({ orders, loading }: OrdersTableProps): JSX.Element {
+export function OrdersTable({ orders, loading, totalCount = 0, page = 0, pageSize = 10, onPageChange }: OrdersTableProps): JSX.Element {
   if (loading) return <SkeletonTable rows={5} />
+
+  const totalPages = Math.ceil(totalCount / pageSize)
+  const hasPrev = page > 0
+  const hasNext = page < totalPages - 1
+  const start = totalCount === 0 ? 0 : page * pageSize + 1
+  const end = Math.min((page + 1) * pageSize, totalCount)
 
   if (orders.length === 0) {
     return (
@@ -87,6 +97,34 @@ export function OrdersTable({ orders, loading }: OrdersTableProps): JSX.Element 
           </Card>
         ))}
       </div>
+
+      {/* Pagination */}
+      {onPageChange && totalPages > 1 && (
+        <div className="flex flex-col items-center gap-2 pt-3">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => { onPageChange(page - 1) }}
+              disabled={!hasPrev}
+              className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded-lg border border-border bg-bg text-sm text-heading transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              ←
+            </button>
+            <span className="text-xs text-text">
+              {String(page + 1)} of {String(totalPages)}
+            </span>
+            <button
+              onClick={() => { onPageChange(page + 1) }}
+              disabled={!hasNext}
+              className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded-lg border border-border bg-bg text-sm text-heading transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              →
+            </button>
+          </div>
+          <span className="text-xs text-text">
+            {String(start)}–{String(end)} of {String(totalCount)} orders
+          </span>
+        </div>
+      )}
     </div>
   )
 }

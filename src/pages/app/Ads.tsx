@@ -114,6 +114,8 @@ export function Ads(): JSX.Element {
       .order('spend', { ascending: false })
     if (dateRange.from) query = query.gte('date', dateRange.from)
     if (dateRange.to)   query = query.lte('date', dateRange.to)
+    if (perfFilter === 'good')   query = query.gte('roas', 2.0)
+    if (perfFilter === 'losing') query = query.lt('roas', 1.0)
     const { data } = await query
     if (data) exportCampaignsCSV(data)
     setExporting(false)

@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
-import { Skeleton } from '@/components/ui/Skeleton'
+import { SkeletonPage } from '@/components/ui/Skeleton'
 import { useCampaignData } from '@/hooks/useCampaignData'
 import { useInfluencerDetail } from '@/hooks/useInfluencerDetail'
 import { useWorkspaceRole } from '@/hooks/useWorkspaceRole'
@@ -196,7 +196,7 @@ export function InfluencerDetail(): JSX.Element {
     refetch()
   }
 
-  if (loading) return <Skeleton variant="page" />
+  if (loading) return <SkeletonPage />
 
   if (error || !influencer) {
     return (

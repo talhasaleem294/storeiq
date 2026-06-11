@@ -5,7 +5,7 @@ import { ProfitSummaryCard } from '@/components/features/ProfitSummaryCard'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
-import { Skeleton } from '@/components/ui/Skeleton'
+import { SkeletonPage } from '@/components/ui/Skeleton'
 import { useCampaignDetail } from '@/hooks/useCampaignDetail'
 import { useWorkspaceRole } from '@/hooks/useWorkspaceRole'
 import { ROUTES } from '@/lib/constants'
@@ -127,7 +127,7 @@ export function CampaignDetail(): JSX.Element {
     window.history.back()
   }
 
-  if (loading) return <Skeleton variant="page" />
+  if (loading) return <SkeletonPage />
 
   if (error || !campaign) {
     return (

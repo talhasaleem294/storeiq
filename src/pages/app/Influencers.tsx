@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Input } from '@/components/ui/Input'
-import { Skeleton } from '@/components/ui/Skeleton'
+import { SkeletonTable } from '@/components/ui/Skeleton'
 import { useDeliverablesDueThisWeek } from '@/hooks/useDeliverablesDueThisWeek'
 import { useInfluencerData } from '@/hooks/useInfluencerData'
 import { useWorkspaceRole } from '@/hooks/useWorkspaceRole'
@@ -269,7 +269,7 @@ export function Influencers(): JSX.Element {
 
       {/* Influencer Directory */}
       {loading ? (
-        <Skeleton variant="table" />
+        <SkeletonTable />
       ) : (() => {
         const q = search.toLowerCase()
         const filtered = search

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Input } from '@/components/ui/Input'
-import { Skeleton } from '@/components/ui/Skeleton'
+import { SkeletonPage } from '@/components/ui/Skeleton'
 import { useCampaignData } from '@/hooks/useCampaignData'
 import { useWorkspaceRole } from '@/hooks/useWorkspaceRole'
 import { ROUTES } from '@/lib/constants'
@@ -193,7 +193,7 @@ export function Campaigns(): JSX.Element {
       </div>
 
       {loading ? (
-        <Skeleton variant="page" />
+        <SkeletonPage />
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={

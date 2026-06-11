@@ -93,14 +93,21 @@ Deno.serve(async (req) => {
       ...(cursor ? { after: cursor } : {}),
     }
 
-    const res = await fetch(graphqlUrl, {
-      method: 'POST',
-      headers: {
-        'X-Shopify-Access-Token': access_token,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ query: ORDERS_QUERY, variables }),
-    })
+    let res: Response
+    try {
+      res = await fetch(graphqlUrl, {
+        method: 'POST',
+        headers: {
+          'X-Shopify-Access-Token': access_token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query: ORDERS_QUERY, variables }),
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'fetch failed'
+      console.error(`[shopify-sync] network error:`, msg)
+      return jsonResponse({ synced, error: msg, workspace_id: workspaceId })
+    }
 
     if (res.status === 429) {
       const retryAfter = parseInt(res.headers.get('Retry-After') ?? '2', 10)

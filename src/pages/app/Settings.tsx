@@ -10,6 +10,7 @@ import { Skeleton, SkeletonPage } from '@/components/ui/Skeleton'
 import { useMetaConnection } from '@/hooks/useMetaConnection'
 import { useShopifyConnection } from '@/hooks/useShopifyConnection'
 import { useWorkspace } from '@/hooks/useWorkspace'
+import { useWorkspaceCostConfig } from '@/hooks/useWorkspaceCostConfig'
 import { useWorkspaceRole } from '@/hooks/useWorkspaceRole'
 import { BANK_DETAILS, PLANS, TRIAL_DAYS, WHATSAPP_NUMBER } from '@/lib/constants'
 import { formatDate } from '@/lib/formatters'
@@ -17,7 +18,7 @@ import { hasPermission } from '@/lib/permissions'
 import { supabase } from '@/lib/supabase'
 
 type ConnectMode = 'oauth' | 'token'
-type SettingsTab = 'integrations' | 'team' | 'billing'
+type SettingsTab = 'integrations' | 'team' | 'billing' | 'costs'
 
 function trialDaysRemaining(trialStartedAt: string | null): number {
   if (!trialStartedAt) return TRIAL_DAYS
@@ -34,7 +35,8 @@ export function Settings(): JSX.Element {
   const { connection: metaConn, loading: metaLoading, error: metaError, connect: metaConnect, disconnect: metaDisconnect } = useMetaConnection(workspaceId ?? '')
 
   const tabParam = searchParams.get('tab')
-  const activeTab: SettingsTab = tabParam === 'team' || tabParam === 'billing' ? tabParam : 'integrations'
+  const activeTab: SettingsTab =
+    tabParam === 'team' || tabParam === 'billing' || tabParam === 'costs' ? tabParam : 'integrations'
 
   function setTab(tab: SettingsTab): void {
     const next = new URLSearchParams(searchParams)
@@ -55,6 +57,36 @@ export function Settings(): JSX.Element {
   const [resyncMsg, setResyncMsg] = useState<'success' | 'error' | null>(null)
   const successClearedRef = useRef(false)
   const metaSuccessClearedRef = useRef(false)
+
+  // Cost settings
+  const { config: costConfig, saving: costSaving, update: updateCostConfig } = useWorkspaceCostConfig(workspaceId ?? '')
+  const [costForm, setCostForm] = useState({ cod_fee_flat: '', cod_fee_karachi: '', cod_fee_lahore: '', cod_fee_islamabad: '', cod_fee_other: '', packaging_cost: '' })
+  const [costSaved, setCostSaved] = useState(false)
+
+  useEffect(() => {
+    setCostForm({
+      cod_fee_flat:      costConfig.cod_fee_flat      > 0 ? String(costConfig.cod_fee_flat)      : '',
+      cod_fee_karachi:   costConfig.cod_fee_karachi   > 0 ? String(costConfig.cod_fee_karachi)   : '',
+      cod_fee_lahore:    costConfig.cod_fee_lahore    > 0 ? String(costConfig.cod_fee_lahore)    : '',
+      cod_fee_islamabad: costConfig.cod_fee_islamabad > 0 ? String(costConfig.cod_fee_islamabad) : '',
+      cod_fee_other:     costConfig.cod_fee_other     > 0 ? String(costConfig.cod_fee_other)     : '',
+      packaging_cost:    costConfig.packaging_cost    > 0 ? String(costConfig.packaging_cost)    : '',
+    })
+  }, [costConfig])
+
+  async function handleSaveCosts(e: React.SyntheticEvent): Promise<void> {
+    e.preventDefault()
+    await updateCostConfig({
+      cod_fee_flat:      Number(costForm.cod_fee_flat)      || 0,
+      cod_fee_karachi:   Number(costForm.cod_fee_karachi)   || 0,
+      cod_fee_lahore:    Number(costForm.cod_fee_lahore)    || 0,
+      cod_fee_islamabad: Number(costForm.cod_fee_islamabad) || 0,
+      cod_fee_other:     Number(costForm.cod_fee_other)     || 0,
+      packaging_cost:    Number(costForm.packaging_cost)    || 0,
+    })
+    setCostSaved(true)
+    setTimeout(() => { setCostSaved(false) }, 4000)
+  }
 
   useEffect(() => {
     if (searchParams.get('shopify') === 'connected' && !successClearedRef.current) {
@@ -189,6 +221,7 @@ export function Settings(): JSX.Element {
   const tabs: Array<{ key: SettingsTab; label: string; description: string }> = [
     { key: 'integrations', label: 'Integrations', description: 'Shopify & Meta Ads' },
     { key: 'team', label: 'Team', description: 'Members & invites' },
+    { key: 'costs', label: 'Costs', description: 'COD fee & packaging' },
     ...(role === 'owner'
       ? [{ key: 'billing' as SettingsTab, label: 'Billing', description: 'Plan & payment' }]
       : []
@@ -505,6 +538,99 @@ export function Settings(): JSX.Element {
           {/* ─── Team ──────────────────────────────────────────────────────────── */}
           {activeTab === 'team' && (
             <WorkspaceMembers workspaceId={workspaceId ?? ''} callerRole={role} />
+          )}
+
+          {/* ─── Costs ─────────────────────────────────────────────────────────── */}
+          {activeTab === 'costs' && (
+            <form onSubmit={(e) => { void handleSaveCosts(e) }} className="space-y-6">
+              {costSaved && (
+                <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300">
+                  <svg className="shrink-0" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path fillRule="evenodd" d="M8 15A7 7 0 108 1a7 7 0 000 14zm3.354-9.354a.5.5 0 00-.708-.707L7 8.793 5.354 7.146a.5.5 0 10-.708.708l2 2a.5.5 0 00.708 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  Cost settings saved.
+                </div>
+              )}
+
+              <Card padding="lg">
+                <h2 className="text-sm font-semibold text-heading mb-1">COD Fee per Order</h2>
+                <p className="text-xs text-text mb-4">Applied to every order when calculating net profit. Leave blank to use 0.</p>
+                <div className="space-y-3">
+                  <Input
+                    label="Flat rate (all cities)"
+                    type="number"
+                    min={0}
+                    placeholder="PKR 0"
+                    value={costForm.cod_fee_flat}
+                    onChange={e => { setCostForm(f => ({ ...f, cod_fee_flat: e.target.value })) }}
+                    hint="Used when no per-city rate is set"
+                    disabled={!hasPermission(role, 'settings:view') || role === 'supervisor'}
+                  />
+                  <p className="text-xs font-medium text-text pt-1">Per-city overrides (optional)</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Input
+                      label="Karachi"
+                      type="number"
+                      min={0}
+                      placeholder="PKR 0"
+                      value={costForm.cod_fee_karachi}
+                      onChange={e => { setCostForm(f => ({ ...f, cod_fee_karachi: e.target.value })) }}
+                      disabled={!hasPermission(role, 'settings:view') || role === 'supervisor'}
+                    />
+                    <Input
+                      label="Lahore"
+                      type="number"
+                      min={0}
+                      placeholder="PKR 0"
+                      value={costForm.cod_fee_lahore}
+                      onChange={e => { setCostForm(f => ({ ...f, cod_fee_lahore: e.target.value })) }}
+                      disabled={!hasPermission(role, 'settings:view') || role === 'supervisor'}
+                    />
+                    <Input
+                      label="Islamabad"
+                      type="number"
+                      min={0}
+                      placeholder="PKR 0"
+                      value={costForm.cod_fee_islamabad}
+                      onChange={e => { setCostForm(f => ({ ...f, cod_fee_islamabad: e.target.value })) }}
+                      disabled={!hasPermission(role, 'settings:view') || role === 'supervisor'}
+                    />
+                    <Input
+                      label="Other cities"
+                      type="number"
+                      min={0}
+                      placeholder="PKR 0"
+                      value={costForm.cod_fee_other}
+                      onChange={e => { setCostForm(f => ({ ...f, cod_fee_other: e.target.value })) }}
+                      hint="Fallback for unlisted cities"
+                      disabled={!hasPermission(role, 'settings:view') || role === 'supervisor'}
+                    />
+                  </div>
+                </div>
+              </Card>
+
+              <Card padding="lg">
+                <h2 className="text-sm font-semibold text-heading mb-1">Additional Per-Order Costs</h2>
+                <p className="text-xs text-text mb-4">Deducted from net profit on every order.</p>
+                <Input
+                  label="Packaging cost per order"
+                  type="number"
+                  min={0}
+                  placeholder="PKR 0"
+                  value={costForm.packaging_cost}
+                  onChange={e => { setCostForm(f => ({ ...f, packaging_cost: e.target.value })) }}
+                  disabled={!hasPermission(role, 'settings:view') || role === 'supervisor'}
+                />
+              </Card>
+
+              {role !== 'supervisor' && (
+                <div className="flex justify-end">
+                  <Button type="submit" variant="primary" size="sm" loading={costSaving}>
+                    Save Changes
+                  </Button>
+                </div>
+              )}
+            </form>
           )}
 
           {/* ─── Billing (owner only) ──────────────────────────────────────────── */}

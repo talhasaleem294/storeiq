@@ -13,7 +13,9 @@ import { useInfluencerSpend } from '@/hooks/useInfluencerSpend'
 import { useMetaConnection } from '@/hooks/useMetaConnection'
 import { useOrders } from '@/hooks/useOrders'
 import { useShopifyConnection } from '@/hooks/useShopifyConnection'
+import { useWorkspaceCostConfig } from '@/hooks/useWorkspaceCostConfig'
 import { ROUTES } from '@/lib/constants'
+import { computeStructuredCosts } from '@/lib/costCalculator'
 import { exportOrdersCSV } from '@/lib/csv'
 import { formatCurrency, formatPercentage } from '@/lib/formatters'
 import type { DateRange } from '@/types/app'
@@ -48,6 +50,7 @@ export function Profit(): JSX.Element {
   const { totals: adsTotals, loading: adsLoading } = useAdsData(workspaceId ?? '', dateRange)
   const { totalCommittedSpend: influencerSpend, loading: influencerLoading } = useInfluencerSpend(workspaceId ?? '', dateRange)
   const { cityRows, customerStats, loading: cityLoading } = useCityAndCustomerStats(workspaceId ?? '', dateRange)
+  const { config: costConfig } = useWorkspaceCostConfig(workspaceId ?? '')
 
   // Reset to page 0 whenever the date range changes
   useEffect(() => { setOrdersPage(0) }, [selectedDays])
@@ -56,7 +59,9 @@ export function Profit(): JSX.Element {
   const adSpend = isMetaConnected ? adsTotals.totalSpend : 0
   const hasInfluencerSpend = influencerSpend > 0
   const marketingSpend = adSpend + influencerSpend
-  const trueNetProfit = summary.netProfit - adSpend - influencerSpend
+  const structuredCosts = computeStructuredCosts(costConfig, stats?.orderCount ?? 0, cityRows)
+  const hasStructuredCosts = structuredCosts > 0
+  const trueNetProfit = summary.netProfit - adSpend - influencerSpend - structuredCosts
   const estimatedCogs = avgCostPerOrder > 0 && stats ? avgCostPerOrder * stats.orderCount : 0
   const displayProfit = avgCostPerOrder > 0 ? trueNetProfit - estimatedCogs : trueNetProfit
 
@@ -143,24 +148,33 @@ export function Profit(): JSX.Element {
       </div>
 
       {/* Summary cards — QW #1 trend arrows */}
-      <div className={`grid grid-cols-1 gap-4 ${(isMetaConnected || hasInfluencerSpend) ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
-        <ProfitSummaryCard label="Revenue" value={formatCurrency(summary.totalRevenue)} trend={revenueTrend} loading={loading} />
-        <ProfitSummaryCard label="Refunds" value={formatCurrency(summary.totalRefunds)} loading={loading} />
-        {(isMetaConnected || hasInfluencerSpend) && (
-          <ProfitSummaryCard label="Marketing Spend" value={formatCurrency(marketingSpend)} loading={loading} />
-        )}
-        <ProfitSummaryCard
-          label={
-            avgCostPerOrder > 0
-              ? 'Net Profit (incl. est. COGS)'
-              : (isMetaConnected || hasInfluencerSpend) ? 'Net Profit (after marketing)' : 'Net Profit'
-          }
-          value={formatCurrency(displayProfit)}
-          trend={profitTrend}
-          loading={loading}
-          highlight
-        />
-      </div>
+      {(() => {
+        const extraCols = (isMetaConnected || hasInfluencerSpend ? 1 : 0) + (hasStructuredCosts ? 1 : 0)
+        const cols = 3 + extraCols
+        return (
+          <div className={`grid grid-cols-1 gap-4 sm:grid-cols-${String(cols)}`}>
+            <ProfitSummaryCard label="Revenue" value={formatCurrency(summary.totalRevenue)} trend={revenueTrend} loading={loading} />
+            <ProfitSummaryCard label="Refunds" value={formatCurrency(summary.totalRefunds)} loading={loading} />
+            {(isMetaConnected || hasInfluencerSpend) && (
+              <ProfitSummaryCard label="Marketing Spend" value={formatCurrency(marketingSpend)} loading={loading} />
+            )}
+            {hasStructuredCosts && (
+              <ProfitSummaryCard label="Cost Structure" value={formatCurrency(structuredCosts)} loading={loading} />
+            )}
+            <ProfitSummaryCard
+              label={
+                avgCostPerOrder > 0
+                  ? 'Net Profit (incl. est. COGS)'
+                  : (isMetaConnected || hasInfluencerSpend || hasStructuredCosts) ? 'Net Profit (after costs)' : 'Net Profit'
+              }
+              value={formatCurrency(displayProfit)}
+              trend={profitTrend}
+              loading={loading}
+              highlight
+            />
+          </div>
+        )
+      })()}
 
       {/* Key Ratios — ME #1 refund rate with trend */}
       {!loading && summary.totalRevenue > 0 && (

@@ -12,7 +12,9 @@ import { useInfluencerSpend } from '@/hooks/useInfluencerSpend'
 import { useMetaConnection } from '@/hooks/useMetaConnection'
 import { useOrders } from '@/hooks/useOrders'
 import { useShopifyConnection } from '@/hooks/useShopifyConnection'
+import { useWorkspaceCostConfig } from '@/hooks/useWorkspaceCostConfig'
 import { ROUTES } from '@/lib/constants'
+import { computeStructuredCosts } from '@/lib/costCalculator'
 import { formatCurrency, formatPercentage } from '@/lib/formatters'
 
 const MILESTONES = [50_000, 100_000, 250_000, 500_000, 1_000_000, 2_500_000, 5_000_000]
@@ -35,11 +37,15 @@ export function Dashboard(): JSX.Element {
   const { orders, summary, stats, loading: ordersLoading } = useOrders(workspaceId ?? '', undefined, 30)
   const { totals: adsTotals, loading: adsLoading } = useAdsData(workspaceId ?? '')
   const { totalCommittedSpend: influencerSpend, loading: influencerLoading } = useInfluencerSpend(workspaceId ?? '')
+  const { config: costConfig } = useWorkspaceCostConfig(workspaceId ?? '')
 
   const isMetaConnected = !metaConnLoading && metaConn !== null
   const adSpend = isMetaConnected ? adsTotals.totalSpend : 0
   const hasInfluencerSpend = influencerSpend > 0
-  const trueNetProfit = summary.netProfit - adSpend - influencerSpend
+  // Dashboard has no cityRows — use flat-rate COD fee only
+  const structuredCosts = computeStructuredCosts(costConfig, stats?.orderCount ?? 0, [])
+  const hasStructuredCosts = structuredCosts > 0
+  const trueNetProfit = summary.netProfit - adSpend - influencerSpend - structuredCosts
 
   const isLoading = connLoading || ordersLoading || metaConnLoading || adsLoading || influencerLoading
   const isConnected = !connLoading && connection !== null
@@ -230,34 +236,51 @@ export function Dashboard(): JSX.Element {
       )}
 
       {/* Summary cards — QW #1: trend arrows wired */}
-      <div className={`grid grid-cols-1 gap-4 ${(isMetaConnected || hasInfluencerSpend) ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
-        <ProfitSummaryCard
-          label="Total Revenue"
-          value={formatCurrency(summary.totalRevenue)}
-          trend={revenueTrend}
-          loading={isLoading}
-        />
-        <ProfitSummaryCard
-          label="Total Refunds"
-          value={formatCurrency(summary.totalRefunds)}
-          loading={isLoading}
-        />
-        {(isMetaConnected || hasInfluencerSpend) && (
-          <ProfitSummaryCard
-            label="Marketing Spend"
-            value={formatCurrency(marketingSpend)}
-            loading={isLoading}
-          />
-        )}
-        <ProfitSummaryCard
-          label={(isMetaConnected || hasInfluencerSpend) ? 'Net Profit (after marketing)' : 'Net Profit'}
-          value={formatCurrency(trueNetProfit)}
-          trend={profitTrend}
-          loading={isLoading}
-          highlight
-          sparklineData={stats?.netProfitByDay}
-        />
-      </div>
+      {(() => {
+        const extraCols = (isMetaConnected || hasInfluencerSpend ? 1 : 0) + (hasStructuredCosts ? 1 : 0)
+        const cols = 3 + extraCols
+        return (
+          <div className={`grid grid-cols-1 gap-4 sm:grid-cols-${String(cols)}`}>
+            <ProfitSummaryCard
+              label="Total Revenue"
+              value={formatCurrency(summary.totalRevenue)}
+              trend={revenueTrend}
+              loading={isLoading}
+            />
+            <ProfitSummaryCard
+              label="Total Refunds"
+              value={formatCurrency(summary.totalRefunds)}
+              loading={isLoading}
+            />
+            {(isMetaConnected || hasInfluencerSpend) && (
+              <ProfitSummaryCard
+                label="Marketing Spend"
+                value={formatCurrency(marketingSpend)}
+                loading={isLoading}
+              />
+            )}
+            {hasStructuredCosts && (
+              <ProfitSummaryCard
+                label="Cost Structure"
+                value={formatCurrency(structuredCosts)}
+                loading={isLoading}
+              />
+            )}
+            <ProfitSummaryCard
+              label={
+                (isMetaConnected || hasInfluencerSpend || hasStructuredCosts)
+                  ? 'Net Profit (after costs)'
+                  : 'Net Profit'
+              }
+              value={formatCurrency(trueNetProfit)}
+              trend={profitTrend}
+              loading={isLoading}
+              highlight
+              sparklineData={stats?.netProfitByDay}
+            />
+          </div>
+        )
+      })()}
 
       {/* QW #2 — Revenue Milestone */}
       {!isLoading && summary.totalRevenue > 0 && (

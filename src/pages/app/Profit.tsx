@@ -42,6 +42,7 @@ export function Profit(): JSX.Element {
   const { connection: metaConn, loading: metaConnLoading } = useMetaConnection(workspaceId ?? '')
   const [selectedDays, setSelectedDays] = useState<number>(30)
   const [ordersPage, setOrdersPage] = useState(0)
+  const [avgCostPerOrder, setAvgCostPerOrder] = useState<number>(0)
   const dateRange = useMemo(() => getDateRange(selectedDays), [selectedDays])
   const { orders, summary, stats, totalCount, loading: ordersLoading } = useOrders(workspaceId ?? '', dateRange, selectedDays, ordersPage)
   const { totals: adsTotals, loading: adsLoading } = useAdsData(workspaceId ?? '', dateRange)
@@ -56,13 +57,15 @@ export function Profit(): JSX.Element {
   const hasInfluencerSpend = influencerSpend > 0
   const marketingSpend = adSpend + influencerSpend
   const trueNetProfit = summary.netProfit - adSpend - influencerSpend
+  const estimatedCogs = avgCostPerOrder > 0 && stats ? avgCostPerOrder * stats.orderCount : 0
+  const displayProfit = avgCostPerOrder > 0 ? trueNetProfit - estimatedCogs : trueNetProfit
 
   const loading = connLoading || ordersLoading || metaConnLoading || adsLoading || influencerLoading || cityLoading
   const isConnected = !connLoading && connection !== null
 
   // Key ratios
   const refundRate = summary.totalRevenue > 0 ? (summary.totalRefunds / summary.totalRevenue) * 100 : 0
-  const profitMargin = summary.totalRevenue > 0 ? (trueNetProfit / summary.totalRevenue) * 100 : 0
+  const profitMargin = summary.totalRevenue > 0 ? (displayProfit / summary.totalRevenue) * 100 : 0
   const adSpendRatio = (isMetaConnected || hasInfluencerSpend) && summary.totalRevenue > 0
     ? (marketingSpend / summary.totalRevenue) * 100
     : null
@@ -147,8 +150,12 @@ export function Profit(): JSX.Element {
           <ProfitSummaryCard label="Marketing Spend" value={formatCurrency(marketingSpend)} loading={loading} />
         )}
         <ProfitSummaryCard
-          label={(isMetaConnected || hasInfluencerSpend) ? 'Net Profit (after marketing)' : 'Net Profit'}
-          value={formatCurrency(trueNetProfit)}
+          label={
+            avgCostPerOrder > 0
+              ? 'Net Profit (incl. est. COGS)'
+              : (isMetaConnected || hasInfluencerSpend) ? 'Net Profit (after marketing)' : 'Net Profit'
+          }
+          value={formatCurrency(displayProfit)}
           trend={profitTrend}
           loading={loading}
           highlight
@@ -187,6 +194,17 @@ export function Profit(): JSX.Element {
               <span className="font-semibold text-red-800 dark:text-red-200">{formatCurrency(stats.rtoRevenue)} exposure</span>
             </div>
           )}
+          <div className="flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-xs">
+            <span className="text-text">Avg cost/order (est.)</span>
+            <input
+              type="number"
+              min={0}
+              placeholder="PKR 0"
+              value={avgCostPerOrder || ''}
+              onChange={e => { setAvgCostPerOrder(Number(e.target.value) || 0) }}
+              className="w-24 rounded border border-border bg-bg px-2 py-0.5 text-xs text-heading focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+          </div>
         </div>
       )}
 

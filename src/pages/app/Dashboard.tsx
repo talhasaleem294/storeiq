@@ -240,7 +240,7 @@ export function Dashboard(): JSX.Element {
         const extraCols = (isMetaConnected || hasInfluencerSpend ? 1 : 0) + (hasStructuredCosts ? 1 : 0)
         const cols = 3 + extraCols
         return (
-          <div className={`grid grid-cols-1 gap-4 sm:grid-cols-${String(cols)}`}>
+          <div className={`grid grid-cols-1 gap-4 ${cols === 5 ? 'sm:grid-cols-5' : cols === 4 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
             <ProfitSummaryCard
               label="Total Revenue"
               value={formatCurrency(summary.totalRevenue)}

@@ -21,6 +21,7 @@ export interface CustomerStats {
   repeatRate: number
   repeatRevenuePct: number
   topCustomers: TopCustomer[]
+  newCustomerCount: number
 }
 
 export interface UseCityAndCustomerStatsReturn {
@@ -65,7 +66,15 @@ export function useCityAndCustomerStats(
       .gte('created_at', dateRange.from)
       .lte('created_at', dateRange.to)
 
-    void Promise.all([cityQ, customerQ]).then(([cityRes, custRes]) => {
+    // Fetch prior customer IDs to identify new customers in the current range
+    const priorCustQ = supabase
+      .from('orders')
+      .select('customer_id')
+      .eq('workspace_id', workspaceId)
+      .not('customer_id', 'is', null)
+      .lt('created_at', dateRange.from)
+
+    void Promise.all([cityQ, customerQ, priorCustQ]).then(([cityRes, custRes, priorCustRes]) => {
       if (cancelled) return
 
       // --- City breakdown ---
@@ -111,6 +120,11 @@ export function useCityAndCustomerStats(
       const repeatCustomers = customers.filter(c => c.orderCount > 1)
       const repeatRevenue = repeatCustomers.reduce((s, c) => s + c.totalSpend, 0)
 
+      type PriorCustRaw = { customer_id: string | null }
+      const priorCustData = (priorCustRes.data ?? []) as PriorCustRaw[]
+      const priorCustomerIds = new Set(priorCustData.map(r => r.customer_id).filter(Boolean))
+      const newCustomerCount = Array.from(custMap.keys()).filter(id => !priorCustomerIds.has(id)).length
+
       const stats: CustomerStats | null = totalCustomers > 0
         ? {
             repeatRate: (repeatCustomers.length / totalCustomers) * 100,
@@ -123,6 +137,7 @@ export function useCityAndCustomerStats(
                 orderCount: c.orderCount,
                 totalSpend: c.totalSpend,
               })),
+            newCustomerCount,
           }
         : null
 

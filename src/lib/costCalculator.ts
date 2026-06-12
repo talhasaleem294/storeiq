@@ -33,3 +33,13 @@ export function computeStructuredCosts(
   const packagingFees = config.packaging_cost * orderCount
   return codFees + packagingFees
 }
+
+export function computeBreakEvenROAS(
+  config: WorkspaceCostConfig,
+  aov: number,
+  avgCogsPerOrder: number,
+): number | null {
+  const totalCost = config.cod_fee_flat + config.packaging_cost + avgCogsPerOrder
+  if (totalCost >= aov || aov <= 0) return null
+  return aov / (aov - totalCost)
+}

@@ -6,10 +6,15 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { InsightBanner } from '@/components/ui/InsightBanner'
 import { SkeletonTable } from '@/components/ui/Skeleton'
 import { type AdsPerformanceFilter, useAdsData } from '@/hooks/useAdsData'
 import { useMetaConnection } from '@/hooks/useMetaConnection'
+import { useOrderRTORate } from '@/hooks/useOrderRTORate'
+import { useWorkspaceCostConfig } from '@/hooks/useWorkspaceCostConfig'
+import { computeVerdictSummary, getCampaignVerdict } from '@/lib/campaignVerdicts'
 import { PAGINATION, ROUTES, USD_TO_PKR_RATE } from '@/lib/constants'
+import { computeBreakEvenROAS } from '@/lib/costCalculator'
 import { exportCampaignsCSV } from '@/lib/csv'
 import { getUsdToPkrRate } from '@/lib/exchangeRate'
 import { formatCurrency } from '@/lib/formatters'
@@ -29,6 +34,14 @@ function getDateRange(days: number): DateRange {
     from: from.toISOString().substring(0, 10),
     to: to.toISOString().substring(0, 10),
   }
+}
+
+function getRoasTier(roas: number, be: number | null): { variant: 'success' | 'warning' | 'error'; label: string } {
+  const good = be !== null ? be * 1.1 : 2.0
+  const breakEven = be !== null ? be : 1.0
+  if (roas >= good) return { variant: 'success', label: 'Good' }
+  if (roas >= breakEven) return { variant: 'warning', label: 'Break-even' }
+  return { variant: 'error', label: 'Losing' }
 }
 
 function getMonthRange(): DateRange {
@@ -51,6 +64,8 @@ export function Ads(): JSX.Element {
   const [usdToPkr, setUsdToPkr] = useState<number>(USD_TO_PKR_RATE)
   const [deadExpanded, setDeadExpanded] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [avgOrderValue, setAvgOrderValue] = useState<number>(0)
+  const [avgCogs, setAvgCogs] = useState<number>(0)
   const dateRange = useMemo(() => getDateRange(selectedDays), [selectedDays])
   const monthRange = useMemo(() => getMonthRange(), [])
 
@@ -62,6 +77,16 @@ export function Ads(): JSX.Element {
   )
   // QW #6 — month spend for velocity calculation (no page/filter, just totals)
   const { totals: monthTotals } = useAdsData(workspaceId ?? '', monthRange)
+  const { config: costConfig } = useWorkspaceCostConfig(workspaceId ?? '')
+  const { rtoRate } = useOrderRTORate(workspaceId ?? '', dateRange)
+  const breakEvenROAS = useMemo(
+    () => avgOrderValue > 0 ? computeBreakEvenROAS(costConfig, avgOrderValue, avgCogs) : null,
+    [costConfig, avgOrderValue, avgCogs],
+  )
+  const verdictSummary = useMemo(
+    () => computeVerdictSummary(campaigns, breakEvenROAS),
+    [campaigns, breakEvenROAS],
+  )
 
   const syncedRef = useRef(false)
 
@@ -243,6 +268,41 @@ export function Ads(): JSX.Element {
         </div>
       </div>
 
+      {/* Break-even ROAS calculator */}
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface px-4 py-3">
+        <span className="text-xs font-medium text-text">Break-even calculator:</span>
+        <div className="flex items-center gap-1.5 rounded-lg border border-border bg-bg px-2 py-1 text-xs">
+          <span className="text-text">Avg order value</span>
+          <input
+            type="number"
+            min={0}
+            placeholder="PKR 0"
+            value={avgOrderValue || ''}
+            onChange={e => { setAvgOrderValue(Number(e.target.value) || 0) }}
+            className="w-20 rounded border border-border bg-surface px-1.5 py-0.5 text-xs text-heading focus:outline-none focus:ring-1 focus:ring-accent"
+          />
+        </div>
+        <div className="flex items-center gap-1.5 rounded-lg border border-border bg-bg px-2 py-1 text-xs">
+          <span className="text-text">COGS/order</span>
+          <input
+            type="number"
+            min={0}
+            placeholder="PKR 0"
+            value={avgCogs || ''}
+            onChange={e => { setAvgCogs(Number(e.target.value) || 0) }}
+            className="w-20 rounded border border-border bg-surface px-1.5 py-0.5 text-xs text-heading focus:outline-none focus:ring-1 focus:ring-accent"
+          />
+        </div>
+        {breakEvenROAS !== null ? (
+          <div className="flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent-bg/20 px-3 py-1 text-xs">
+            <span className="text-text">Your break-even ROAS:</span>
+            <span className="font-semibold text-accent">{breakEvenROAS.toFixed(2)}x</span>
+          </div>
+        ) : (
+          <span className="text-xs text-text/60">Enter AOV + costs to see your break-even ROAS</span>
+        )}
+      </div>
+
       {/* Totals — always reflect all campaigns, not the current filter */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <ProfitSummaryCard
@@ -267,6 +327,15 @@ export function Ads(): JSX.Element {
             </span>
           </p>
         </div>
+      )}
+
+      {/* InsightBanner — losing campaigns */}
+      {!loading && insights !== null && insights.losingCount > 0 && (
+        <InsightBanner
+          dismissKey={`storeiq_insight_dismissed_${workspaceId ?? ''}_ads`}
+          variant="warning"
+          message={`Pausing ${String(insights.losingCount)} underperforming campaign${insights.losingCount === 1 ? '' : 's'} could save ${fmtSpend(insights.moneyAtRisk)}/month`}
+        />
       )}
 
       {/* Campaign Health insight cards */}
@@ -422,6 +491,18 @@ export function Ads(): JSX.Element {
         </div>
       )}
 
+      {/* Verdict summary strip */}
+      {!loading && campaigns.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3 text-sm">
+          <span className="font-medium text-heading">Campaign Verdicts:</span>
+          <span className="text-green-700 dark:text-green-400">{String(verdictSummary.scaleCount)} ready to scale</span>
+          <span className="text-text">·</span>
+          <span className="text-amber-700 dark:text-amber-400">{String(verdictSummary.watchCount)} need watching</span>
+          <span className="text-text">·</span>
+          <span className="text-red-700 dark:text-red-400">{String(verdictSummary.pauseCount)} should be paused</span>
+        </div>
+      )}
+
       {/* Campaigns table */}
       <div>
         <h2 className="mb-3 text-sm font-semibold text-heading">
@@ -469,6 +550,7 @@ export function Ads(): JSX.Element {
                     <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-text">ROAS</th>
                     <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-text">CTR</th>
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-text">Performance</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-text">Verdict</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -479,12 +561,25 @@ export function Ads(): JSX.Element {
                         <Badge variant={statusVariant(c.status)}>{statusLabel(c.status)}</Badge>
                       </td>
                       <td className="px-4 py-3 text-right text-heading">{fmtSpend(c.spend)}</td>
-                      <td className="px-4 py-3 text-right text-heading">{c.roas.toFixed(2)}x</td>
+                      <td className="px-4 py-3 text-right text-heading">
+                        {c.roas.toFixed(2)}x
+                        {rtoRate > 0 && (
+                          <p className="text-xs text-text">{(c.roas * (1 - rtoRate)).toFixed(2)}x eff.</p>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right text-heading">{(c.ctr * 100).toFixed(2)}%</td>
                       <td className="px-4 py-3">
-                        <Badge variant={c.roas >= 2 ? 'success' : c.roas >= 1 ? 'warning' : 'error'}>
-                          {c.roas >= 2 ? 'Good' : c.roas >= 1 ? 'Break-even' : 'Losing'}
-                        </Badge>
+                        {(() => { const t = getRoasTier(c.roas, breakEvenROAS); return <Badge variant={t.variant}>{t.label}</Badge> })()}
+                      </td>
+                      <td className="px-4 py-3">
+                        {(() => {
+                          const v = getCampaignVerdict(c.roas, c.spend, breakEvenROAS)
+                          return (
+                            <Badge variant={v === 'scale' ? 'success' : v === 'watch' ? 'warning' : 'error'}>
+                              {v === 'scale' ? 'Scale' : v === 'watch' ? 'Watch' : 'Pause'}
+                            </Badge>
+                          )
+                        })()}
                       </td>
                     </tr>
                   ))}
@@ -500,9 +595,15 @@ export function Ads(): JSX.Element {
                     <p className="text-sm font-semibold leading-tight text-heading">{c.campaign_name}</p>
                     <div className="flex shrink-0 flex-col items-end gap-1">
                       <Badge variant={statusVariant(c.status)}>{statusLabel(c.status)}</Badge>
-                      <Badge variant={c.roas >= 2 ? 'success' : c.roas >= 1 ? 'warning' : 'error'}>
-                        {c.roas >= 2 ? 'Good' : c.roas >= 1 ? 'Break-even' : 'Losing'}
-                      </Badge>
+                      {(() => { const t = getRoasTier(c.roas, breakEvenROAS); return <Badge variant={t.variant}>{t.label}</Badge> })()}
+                      {(() => {
+                        const v = getCampaignVerdict(c.roas, c.spend, breakEvenROAS)
+                        return (
+                          <Badge variant={v === 'scale' ? 'success' : v === 'watch' ? 'warning' : 'error'}>
+                            {v === 'scale' ? 'Scale' : v === 'watch' ? 'Watch' : 'Pause'}
+                          </Badge>
+                        )
+                      })()}
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-2 text-center">
@@ -513,6 +614,9 @@ export function Ads(): JSX.Element {
                     <div>
                       <p className="text-xs text-text">ROAS</p>
                       <p className="text-sm font-semibold text-heading">{c.roas.toFixed(2)}x</p>
+                      {rtoRate > 0 && (
+                        <p className="text-xs text-text">{(c.roas * (1 - rtoRate)).toFixed(2)}x eff.</p>
+                      )}
                     </div>
                     <div>
                       <p className="text-xs text-text">CTR</p>

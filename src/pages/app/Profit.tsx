@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { OrdersTable } from '@/components/features/OrdersTable'
+import { ProfitCalendar } from '@/components/features/ProfitCalendar'
 import { ProfitSummaryCard } from '@/components/features/ProfitSummaryCard'
 import { RevenueChart } from '@/components/features/RevenueChart'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { InsightBanner } from '@/components/ui/InsightBanner'
 import { useAdsData } from '@/hooks/useAdsData'
 import { useCityAndCustomerStats } from '@/hooks/useCityAndCustomerStats'
 import { useInfluencerSpend } from '@/hooks/useInfluencerSpend'
@@ -37,6 +39,12 @@ function getDateRange(days: number): DateRange {
 }
 
 const HOUR_LABELS: Record<number, string> = { 0: '12am', 6: '6am', 12: '12pm', 18: '6pm', 23: '11pm' }
+
+function cityRtoVerdict(rtoRate: number): { label: string; dotClass: string } {
+  if (rtoRate > 40) return { label: 'Consider pausing ads', dotClass: 'bg-red-500' }
+  if (rtoRate > 20) return { label: 'Monitor', dotClass: 'bg-amber-400' }
+  return { label: 'Low risk', dotClass: 'bg-green-500' }
+}
 
 export function Profit(): JSX.Element {
   const { workspaceId } = useParams<{ workspaceId: string }>()
@@ -208,6 +216,23 @@ export function Profit(): JSX.Element {
               <span className="font-semibold text-red-800 dark:text-red-200">{formatCurrency(stats.rtoRevenue)} exposure</span>
             </div>
           )}
+          {(() => {
+            if (!stats) return null
+            const lateNightHours = [23, 0, 1, 2]
+            const lateNightRto = lateNightHours.reduce((sum, h) => sum + (stats.hourlyRtoCounts[h] ?? 0), 0)
+            const lateNightOrders = lateNightHours.reduce((sum, h) => sum + (stats.hourlyOrderCounts[h] ?? 0), 0)
+            if (lateNightRto < 5 || lateNightOrders === 0) return null
+            const lateNightRtoRate = lateNightRto / lateNightOrders
+            const overallRtoRate = stats.orderCount > 0 ? stats.rtoCount / stats.orderCount : 0
+            const lift = lateNightRtoRate - overallRtoRate
+            if (lift <= 0.15) return null
+            return (
+              <div className="flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs dark:border-amber-700 dark:bg-amber-900/20">
+                <span className="text-amber-700 dark:text-amber-300">Late-night RTO</span>
+                <span className="font-semibold text-amber-800 dark:text-amber-200">{(lateNightRtoRate * 100).toFixed(1)}% (11pm–2am)</span>
+              </div>
+            )
+          })()}
           <div className="flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-xs">
             <span className="text-text">Avg cost/order (est.)</span>
             <input
@@ -222,8 +247,29 @@ export function Profit(): JSX.Element {
         </div>
       )}
 
+      {/* InsightBanner — city RTO spread tip */}
+      {!loading && (() => {
+        const qualifiedCities = cityRows.filter(r => r.orderCount >= 5)
+        if (qualifiedCities.length < 2) return null
+        const maxCity = qualifiedCities.reduce((a, b) => a.rtoRate > b.rtoRate ? a : b)
+        const minCity = qualifiedCities.reduce((a, b) => a.rtoRate < b.rtoRate ? a : b)
+        if (maxCity.city === minCity.city) return null
+        const spread = maxCity.rtoRate - minCity.rtoRate
+        if (spread <= 15) return null
+        return (
+          <InsightBanner
+            dismissKey={`storeiq_insight_dismissed_${workspaceId ?? ''}_profit`}
+            variant="warning"
+            message={`${maxCity.city} RTO is ${maxCity.rtoRate.toFixed(1)}% vs ${minCity.city} ${minCity.rtoRate.toFixed(1)}% — shifting geo-targeting could reduce lost orders`}
+          />
+        )
+      })()}
+
       {/* Revenue Chart */}
       <RevenueChart orders={orders} loading={loading} />
+
+      {/* Profit Calendar */}
+      <ProfitCalendar workspaceId={workspaceId ?? ''} />
 
       {/* ME #2 — Peak Hours Heatmap */}
       {!loading && stats && hasHourData && (
@@ -277,50 +323,67 @@ export function Profit(): JSX.Element {
                   <th className="pb-2 font-medium text-right">Revenue</th>
                   <th className="pb-2 font-medium text-right">RTO</th>
                   <th className="pb-2 font-medium text-right">RTO Rate</th>
+                  <th className="pb-2 font-medium text-right">Verdict</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {cityRows.slice(0, 10).map(row => (
-                  <tr key={row.city} className="text-sm">
-                    <td className="py-2 font-medium text-heading">{row.city}</td>
-                    <td className="py-2 text-right text-text">{String(row.orderCount)}</td>
-                    <td className="py-2 text-right text-text">{formatCurrency(row.revenue)}</td>
-                    <td className="py-2 text-right text-text">{String(row.rtoCount)}</td>
-                    <td className="py-2 text-right">
-                      <span className={`font-semibold ${
-                        row.rtoRate > 12 ? 'text-red-600' :
-                        row.rtoRate > 5  ? 'text-amber-600' :
-                                           'text-green-600'
-                      }`}>
-                        {row.rtoRate.toFixed(1)}%
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {cityRows.slice(0, 10).map(row => {
+                  const verdict = cityRtoVerdict(row.rtoRate)
+                  return (
+                    <tr key={row.city} className="text-sm">
+                      <td className="py-2 font-medium text-heading">{row.city}</td>
+                      <td className="py-2 text-right text-text">{String(row.orderCount)}</td>
+                      <td className="py-2 text-right text-text">{formatCurrency(row.revenue)}</td>
+                      <td className="py-2 text-right text-text">{String(row.rtoCount)}</td>
+                      <td className="py-2 text-right">
+                        <span className={`font-semibold ${
+                          row.rtoRate > 40 ? 'text-red-600' :
+                          row.rtoRate > 20 ? 'text-amber-600' :
+                                             'text-green-600'
+                        }`}>
+                          {row.rtoRate.toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="py-2 text-right">
+                        <span className="flex items-center justify-end gap-1">
+                          <span className={`inline-block h-2 w-2 rounded-full ${verdict.dotClass}`} />
+                          <span className="text-xs text-text">{verdict.label}</span>
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
 
           {/* Mobile cards */}
           <div className="space-y-2 sm:hidden">
-            {cityRows.slice(0, 10).map(row => (
-              <div key={row.city} className="flex items-center justify-between rounded-lg border border-border p-3">
-                <div>
-                  <p className="text-sm font-medium text-heading">{row.city}</p>
-                  <p className="text-xs text-text">{String(row.orderCount)} orders · {formatCurrency(row.revenue)}</p>
+            {cityRows.slice(0, 10).map(row => {
+              const verdict = cityRtoVerdict(row.rtoRate)
+              return (
+                <div key={row.city} className="flex items-center justify-between rounded-lg border border-border p-3">
+                  <div>
+                    <p className="text-sm font-medium text-heading">{row.city}</p>
+                    <p className="text-xs text-text">{String(row.orderCount)} orders · {formatCurrency(row.revenue)}</p>
+                    <span className="mt-1 flex items-center gap-1">
+                      <span className={`inline-block h-2 w-2 rounded-full ${verdict.dotClass}`} />
+                      <span className="text-xs text-text">{verdict.label}</span>
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <p className={`text-sm font-semibold ${
+                      row.rtoRate > 40 ? 'text-red-600' :
+                      row.rtoRate > 20 ? 'text-amber-600' :
+                                         'text-green-600'
+                    }`}>
+                      {row.rtoRate.toFixed(1)}% RTO
+                    </p>
+                    <p className="text-xs text-text">{String(row.rtoCount)} returned</p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className={`text-sm font-semibold ${
-                    row.rtoRate > 12 ? 'text-red-600' :
-                    row.rtoRate > 5  ? 'text-amber-600' :
-                                       'text-green-600'
-                  }`}>
-                    {row.rtoRate.toFixed(1)}% RTO
-                  </p>
-                  <p className="text-xs text-text">{String(row.rtoCount)} returned</p>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
 
           {cityRows.length > 10 && (
@@ -345,6 +408,46 @@ export function Profit(): JSX.Element {
               <span className="font-semibold text-heading">{formatPercentage(customerStats.repeatRevenuePct)}</span>
             </div>
           </div>
+
+          {/* CAC section — only when Meta is connected and new customers exist */}
+          {isMetaConnected && customerStats.newCustomerCount > 0 && stats && (
+            <div className="mb-4">
+              <p className="mb-2 text-xs font-medium text-text">Customer Acquisition</p>
+              <div className="flex flex-wrap gap-2">
+                <div className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs">
+                  <span className="text-text">New Customers</span>
+                  <span className="font-semibold text-heading">{String(customerStats.newCustomerCount)}</span>
+                </div>
+                {adSpend > 0 ? (() => {
+                  const cac = adSpend / customerStats.newCustomerCount
+                  const aov = stats.orderCount > 0 ? summary.totalRevenue / stats.orderCount : 0
+                  const isProfitable = aov > cac
+                  return (
+                    <>
+                      <div className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs">
+                        <span className="text-text">CAC</span>
+                        <span className="font-semibold text-heading">{formatCurrency(cac)}</span>
+                      </div>
+                      <div className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs ${
+                        isProfitable
+                          ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20'
+                          : 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20'
+                      }`}>
+                        <span className={isProfitable ? 'font-semibold text-green-700 dark:text-green-300' : 'font-semibold text-red-700 dark:text-red-300'}>
+                          {isProfitable ? 'Profitable on first purchase' : 'Unprofitable CAC'}
+                        </span>
+                      </div>
+                    </>
+                  )
+                })() : (
+                  <div className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs">
+                    <span className="text-text">CAC</span>
+                    <span className="font-semibold text-heading">N/A</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Top customers */}
           {customerStats.topCustomers.length > 0 && (

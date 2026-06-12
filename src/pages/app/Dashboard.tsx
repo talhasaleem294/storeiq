@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { OrdersTable } from '@/components/features/OrdersTable'
@@ -7,7 +7,9 @@ import { RevenueChart } from '@/components/features/RevenueChart'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { InsightBanner } from '@/components/ui/InsightBanner'
 import { useAdsData } from '@/hooks/useAdsData'
+import { useCodRemittanceLog } from '@/hooks/useCodRemittanceLog'
 import { useInfluencerSpend } from '@/hooks/useInfluencerSpend'
 import { useMetaConnection } from '@/hooks/useMetaConnection'
 import { useOrders } from '@/hooks/useOrders'
@@ -16,6 +18,7 @@ import { useWorkspaceCostConfig } from '@/hooks/useWorkspaceCostConfig'
 import { ROUTES } from '@/lib/constants'
 import { computeStructuredCosts } from '@/lib/costCalculator'
 import { formatCurrency, formatPercentage } from '@/lib/formatters'
+import type { DateRange } from '@/types/app'
 
 const MILESTONES = [50_000, 100_000, 250_000, 500_000, 1_000_000, 2_500_000, 5_000_000]
 
@@ -34,10 +37,27 @@ export function Dashboard(): JSX.Element {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { connection, loading: connLoading } = useShopifyConnection(workspaceId ?? '')
   const { connection: metaConn, loading: metaConnLoading } = useMetaConnection(workspaceId ?? '')
-  const { orders, summary, stats, loading: ordersLoading } = useOrders(workspaceId ?? '', undefined, 30)
+
+  const dashboardDateRange = useMemo<DateRange>(() => {
+    const to = new Date()
+    const from = new Date()
+    from.setDate(from.getDate() - 30)
+    return {
+      from: from.toISOString().substring(0, 10),
+      to: to.toISOString().substring(0, 10),
+    }
+  }, [])
+
+  const { orders, summary, stats, loading: ordersLoading } = useOrders(workspaceId ?? '', dashboardDateRange, 30)
   const { totals: adsTotals, loading: adsLoading } = useAdsData(workspaceId ?? '')
   const { totalCommittedSpend: influencerSpend, loading: influencerLoading } = useInfluencerSpend(workspaceId ?? '')
   const { config: costConfig } = useWorkspaceCostConfig(workspaceId ?? '')
+  const codLog = useCodRemittanceLog(workspaceId ?? '', dashboardDateRange)
+
+  const [showRemittanceModal, setShowRemittanceModal] = useState(false)
+  const [remittanceAmount, setRemittanceAmount] = useState('')
+  const [remittanceDate, setRemittanceDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
+  const [remittanceNotes, setRemittanceNotes] = useState('')
 
   const isMetaConnected = !metaConnLoading && metaConn !== null
   const adSpend = isMetaConnected ? adsTotals.totalSpend : 0
@@ -110,6 +130,18 @@ export function Dashboard(): JSX.Element {
     acc[s] = (acc[s] ?? 0) + 1
     return acc
   }, {})
+
+  async function handleRecordRemittance(): Promise<void> {
+    const amount = parseFloat(remittanceAmount)
+    if (!amount || amount <= 0) return
+    await codLog.insert(amount, remittanceDate, remittanceNotes.trim() || undefined)
+    if (!codLog.insertError) {
+      setShowRemittanceModal(false)
+      setRemittanceAmount('')
+      setRemittanceNotes('')
+      setRemittanceDate(new Date().toISOString().slice(0, 10))
+    }
+  }
 
   const statusBadgeVariant = (status: string): 'success' | 'warning' | 'error' | 'neutral' => {
     if (status === 'paid' || status === 'fulfilled') return 'success'
@@ -233,6 +265,15 @@ export function Dashboard(): JSX.Element {
             </span>
           )}
         </div>
+      )}
+
+      {/* InsightBanner — best sales day tip */}
+      {!isLoading && stats?.bestDayOfWeek && stats.bestDayRevenue > 0 && (
+        <InsightBanner
+          dismissKey={`storeiq_insight_dismissed_${workspaceId ?? ''}_dashboard`}
+          variant="info"
+          message={`Your best sales day is ${stats.bestDayOfWeek} — consider increasing ad budget the day before`}
+        />
       )}
 
       {/* Summary cards — QW #1: trend arrows wired */}
@@ -392,6 +433,106 @@ export function Dashboard(): JSX.Element {
             </span>
           </div>
         </Card>
+      )}
+
+      {/* COD Cash Flow Tracker */}
+      {!isLoading && stats && stats.codCount > 0 && (
+        <Card padding="md">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-text">COD Cash Flow</p>
+            <button
+              onClick={() => { setShowRemittanceModal(true) }}
+              className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-heading transition-colors hover:bg-bg"
+            >
+              + Record remittance
+            </button>
+          </div>
+          <div className="mb-3">
+            <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">
+              {formatCurrency(Math.max(0, stats.codRevenue - codLog.totalReceived))}
+            </p>
+            <p className="mt-0.5 text-xs text-text">estimated in transit with couriers (last 30 days)</p>
+          </div>
+          {codLog.entries.length > 0 ? (
+            <div className="divide-y divide-border">
+              {codLog.entries.slice(0, 5).map(e => (
+                <div key={e.id} className="flex items-center justify-between py-2 text-xs">
+                  <span className="text-text">{e.received_at}</span>
+                  {e.notes && <span className="max-w-[140px] truncate text-text">{e.notes}</span>}
+                  <span className="font-semibold text-green-700 dark:text-green-400">+{formatCurrency(e.amount)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-text/60">No remittances recorded yet</p>
+          )}
+        </Card>
+      )}
+
+      {/* Record Remittance Modal */}
+      {showRemittanceModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => { setShowRemittanceModal(false) }}
+        >
+          <Card
+            padding="lg"
+            className="w-full max-w-sm"
+            onClick={e => { e.stopPropagation() }}
+          >
+            <h2 className="mb-4 text-sm font-semibold text-heading">Record COD Remittance</h2>
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-heading">Amount (PKR) *</label>
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="0"
+                  value={remittanceAmount}
+                  onChange={e => { setRemittanceAmount(e.target.value) }}
+                  className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm text-heading focus:outline-none focus:ring-2 focus:ring-accent"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-heading">Date received *</label>
+                <input
+                  type="date"
+                  value={remittanceDate}
+                  onChange={e => { setRemittanceDate(e.target.value) }}
+                  className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm text-heading focus:outline-none focus:ring-2 focus:ring-accent"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-heading">Notes (optional)</label>
+                <textarea
+                  value={remittanceNotes}
+                  onChange={e => { setRemittanceNotes(e.target.value) }}
+                  placeholder="e.g. Leopards batch #42"
+                  rows={2}
+                  className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm text-heading focus:outline-none focus:ring-2 focus:ring-accent"
+                />
+              </div>
+              {codLog.insertError && (
+                <p className="text-xs text-red-600">{codLog.insertError}</p>
+              )}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => { setShowRemittanceModal(false) }}
+                className="rounded-lg border border-border bg-surface px-4 py-2 text-sm text-heading transition-colors hover:bg-bg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { void handleRecordRemittance() }}
+                disabled={codLog.inserting || !remittanceAmount}
+                className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {codLog.inserting ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </Card>
+        </div>
       )}
 
       {/* Revenue Chart */}

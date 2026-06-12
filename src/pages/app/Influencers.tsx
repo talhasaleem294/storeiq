@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Input } from '@/components/ui/Input'
+import { InsightBanner } from '@/components/ui/InsightBanner'
 import { SkeletonTable } from '@/components/ui/Skeleton'
 import { useDeliverablesDueThisWeek } from '@/hooks/useDeliverablesDueThisWeek'
 import { useInfluencerData } from '@/hooks/useInfluencerData'
@@ -210,6 +211,20 @@ export function Influencers(): JSX.Element {
           )}
         </div>
       )}
+
+      {/* InsightBanner — overdue deliverables */}
+      {(() => {
+        const today = new Date().toISOString().slice(0, 10)
+        const overdueCount = dueThisWeek.filter(d => d.due_date < today).length
+        if (overdueCount === 0) return null
+        return (
+          <InsightBanner
+            dismissKey={`storeiq_insight_dismissed_${workspaceId ?? ''}_influencers`}
+            variant="warning"
+            message={`${String(overdueCount)} deliverable${overdueCount === 1 ? '' : 's'} are overdue — follow up before the campaign window closes`}
+          />
+        )
+      })()}
 
       {/* Search */}
       {!loading && influencers.length > 0 && (

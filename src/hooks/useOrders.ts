@@ -13,6 +13,7 @@ export interface OrderStats {
   bestDayRevenue: number
   ordersPerDay: number
   hourlyOrderCounts: number[] // length 24, index = hour 0-23
+  hourlyRtoCounts: number[] // length 24, index = hour 0-23, incremented for returned orders
   codRevenue: number
   prepaidRevenue: number
   codCount: number
@@ -68,6 +69,7 @@ function computeStats(allRows: SummaryRow[], dateRangeDays: number): OrderStats 
 
   const dayRevenue = new Array<number>(7).fill(0)
   const hourlyCounts = new Array<number>(24).fill(0)
+  const hourlyRtoCounts = new Array<number>(24).fill(0)
   let codRevenue = 0
   let prepaidRevenue = 0
   let codCount = 0
@@ -118,6 +120,7 @@ function computeStats(allRows: SummaryRow[], dateRangeDays: number): OrderStats 
     if (row.fulfillment_status === 'returned') {
       rtoCount += 1
       rtoRevenue += revenue
+      hourlyRtoCounts[d.getHours()] += 1
     }
 
     // Sparkline accumulation
@@ -139,6 +142,7 @@ function computeStats(allRows: SummaryRow[], dateRangeDays: number): OrderStats 
     bestDayRevenue: dayRevenue[bestDayIdx] ?? 0,
     ordersPerDay: allRows.length / days,
     hourlyOrderCounts: hourlyCounts,
+    hourlyRtoCounts,
     codRevenue,
     prepaidRevenue,
     codCount,

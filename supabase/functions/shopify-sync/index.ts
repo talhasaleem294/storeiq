@@ -66,7 +66,7 @@ Deno.serve(async (req) => {
 
   const { data: conn, error: connErr } = await db
     .from('shopify_connections')
-    .select('shop_domain, access_token')
+    .select('shop_domain, access_token, last_synced_at')
     .eq('workspace_id', workspaceId)
     .single()
 
@@ -74,12 +74,24 @@ Deno.serve(async (req) => {
     return errorResponse('No Shopify connection found', 'NOT_CONNECTED', 404)
   }
 
-  const { shop_domain, access_token } = conn as { shop_domain: string; access_token: string }
+  const { shop_domain, access_token, last_synced_at } = conn as {
+    shop_domain: string
+    access_token: string
+    last_synced_at: string | null
+  }
 
-  const ninetyDaysAgo = new Date()
-  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
-  const sinceDate = ninetyDaysAgo.toISOString().split('T')[0] // YYYY-MM-DD
+  // Incremental sync: if we have a prior sync timestamp, only fetch orders
+  // updated since then (catches refunds, status changes, new orders).
+  // First-time sync falls back to the last 90 days.
+  const syncFilter = last_synced_at
+    ? `updated_at:>=${last_synced_at}`
+    : (() => {
+        const d = new Date()
+        d.setDate(d.getDate() - 90)
+        return `created_at:>=${d.toISOString().split('T')[0]}`
+      })()
 
+  const syncStartedAt = new Date().toISOString()
   let synced = 0
   let cursor: string | null = null
   const graphqlUrl = `https://${shop_domain}/admin/api/2026-04/graphql.json`
@@ -89,7 +101,7 @@ Deno.serve(async (req) => {
 
     const variables: Record<string, unknown> = {
       first: 250,
-      query: `created_at:>=${sinceDate}`,
+      query: syncFilter,
       ...(cursor ? { after: cursor } : {}),
     }
 
@@ -163,5 +175,11 @@ Deno.serve(async (req) => {
     cursor = pageInfo.endCursor
   }
 
-  return jsonResponse({ synced, workspace_id: workspaceId })
+  // Record sync timestamp so the next run only fetches new/updated orders
+  await db
+    .from('shopify_connections')
+    .update({ last_synced_at: syncStartedAt })
+    .eq('workspace_id', workspaceId)
+
+  return jsonResponse({ synced, workspace_id: workspaceId, incremental: last_synced_at !== null })
 })

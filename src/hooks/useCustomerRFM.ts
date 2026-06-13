@@ -37,6 +37,14 @@ interface UseCustomerRFMReturn {
 
 const EMPTY_COUNTS: RfmCounts = { champion: 0, loyal: 0, at_risk: 0, new: 0, lost: 0 }
 
+// Shape returned by get_rfm_data RPC (TABLE — one row per customer, not per order)
+interface RfmRpcRow {
+  customer_id: string
+  last_order_at: string
+  order_count: number
+  total_spend: number
+}
+
 export function useCustomerRFM(workspaceId: string, dateRange?: DateRange): UseCustomerRFMReturn {
   const [customers, setCustomers] = useState<RfmCustomer[]>([])
   const [counts, setCounts] = useState<RfmCounts>(EMPTY_COUNTS)
@@ -48,38 +56,24 @@ export function useCustomerRFM(workspaceId: string, dateRange?: DateRange): UseC
     let cancelled = false
     setLoading(true)
 
+    // get_rfm_data returns M rows (one per customer) not N rows (one per order)
     void supabase
-      .from('orders')
-      .select('customer_id, created_at, revenue')
-      .eq('workspace_id', workspaceId)
-      .not('customer_id', 'is', null)
-      .then(({ data }) => {
+      .rpc('get_rfm_data', {
+        p_workspace_id: workspaceId,
+        p_from: dateRange?.from ?? null,
+        p_to:   dateRange?.to   ?? null,
+      })
+      .then(({ data, error }) => {
         if (cancelled) return
-        if (!data || data.length === 0) {
+        if (error !== null || !data) {
           setCustomers([])
           setCounts(EMPTY_COUNTS)
           setLoading(false)
           return
         }
 
-        // Group by customer_id client-side
-        const map = new Map<string, { lastOrder: number; orderCount: number; totalSpend: number }>()
-        const from = dateRange?.from ? new Date(dateRange.from).getTime() : 0
-        const to = dateRange?.to ? new Date(dateRange.to).getTime() : Infinity
-
-        for (const row of data as Array<{ customer_id: string; created_at: string; revenue: number }>) {
-          const ts = new Date(row.created_at).getTime()
-          if (ts < from || ts > to) continue
-          const cid = row.customer_id
-          const existing = map.get(cid) ?? { lastOrder: 0, orderCount: 0, totalSpend: 0 }
-          map.set(cid, {
-            lastOrder: Math.max(existing.lastOrder, ts),
-            orderCount: existing.orderCount + 1,
-            totalSpend: existing.totalSpend + row.revenue,
-          })
-        }
-
-        if (map.size === 0) {
+        const rows = data as RfmRpcRow[]
+        if (rows.length === 0) {
           setCustomers([])
           setCounts(EMPTY_COUNTS)
           setLoading(false)
@@ -87,19 +81,19 @@ export function useCustomerRFM(workspaceId: string, dateRange?: DateRange): UseC
         }
 
         const now = Date.now()
-        const rows = [...map.entries()].map(([cid, v]) => ({
-          customer_id: cid,
-          lastOrderDaysAgo: Math.floor((now - v.lastOrder) / 86_400_000),
-          orderCount: v.orderCount,
-          totalSpend: v.totalSpend,
+        const mapped = rows.map(r => ({
+          customer_id:      r.customer_id,
+          lastOrderDaysAgo: Math.floor((now - new Date(r.last_order_at).getTime()) / 86_400_000),
+          orderCount:       r.order_count,
+          totalSpend:       r.total_spend,
         }))
 
-        // Compute spend 75th percentile for "champion" threshold
-        const sorted = [...rows].sort((a, b) => a.totalSpend - b.totalSpend)
+        // Compute 75th-percentile spend for champion threshold
+        const sorted = [...mapped].sort((a, b) => a.totalSpend - b.totalSpend)
         const q3Idx = Math.floor(sorted.length * 0.75)
         const spendQ3 = sorted[q3Idx]?.totalSpend ?? 0
 
-        const classified: RfmCustomer[] = rows.map(r => ({
+        const classified: RfmCustomer[] = mapped.map(r => ({
           ...r,
           segment: classifyRFM(r.lastOrderDaysAgo, r.orderCount, r.totalSpend, spendQ3),
         }))

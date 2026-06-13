@@ -67,10 +67,11 @@ function CampaignHistoryChart({ workspaceId, campaignId }: { workspaceId: string
         <YAxis yAxisId="spend" orientation="left" tick={{ fontSize: 10 }} tickFormatter={(v: number) => String(Math.round(v))} />
         <YAxis yAxisId="roas" orientation="right" tick={{ fontSize: 10 }} tickFormatter={(v: number) => `${v.toFixed(1)}x`} />
         <Tooltip
-          formatter={(value: number, name: string) =>
-            name === 'spend' ? [`PKR ${Math.round(value)}`, 'Spend'] : [`${value.toFixed(2)}x`, 'ROAS']
-          }
-          labelFormatter={(label: string) => label}
+          formatter={(value, name) => {
+            const v = Number(value)
+            return String(name) === 'spend' ? [`PKR ${Math.round(v)}`, 'Spend'] : [`${v.toFixed(2)}x`, 'ROAS']
+          }}
+          labelFormatter={(label) => String(label)}
         />
         <Bar yAxisId="spend" dataKey="spend" fill="#94a3b8" opacity={0.6} name="spend" />
         <Line yAxisId="roas" type="monotone" dataKey="roas" stroke="#6366f1" strokeWidth={2} dot={false} name="roas" />

@@ -123,7 +123,7 @@ export function useCityAndCustomerStats(
 
       type PriorCustRaw = { customer_id: string | null }
       const priorCustData = (priorCustRes.data ?? []) as PriorCustRaw[]
-      const priorCustomerIds = new Set(priorCustData.map(r => r.customer_id).filter(Boolean))
+      const priorCustomerIds = new Set(priorCustData.map(r => r.customer_id).filter((id): id is string => id !== null))
       const newCustomerCount = Array.from(custMap.keys()).filter(id => !priorCustomerIds.has(id)).length
 
       const stats: CustomerStats | null = totalCustomers > 0

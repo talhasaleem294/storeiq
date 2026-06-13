@@ -2,8 +2,8 @@ import { Link } from 'react-router-dom'
 
 import { APP_NAME, ROUTES } from '@/lib/constants'
 
-const CONTACT_EMAIL = 'support@storeiq.app'
-const LAST_UPDATED = 'June 3, 2025'
+const CONTACT_EMAIL = 'saleemtalha294@gmail.com'
+const LAST_UPDATED = 'June 13, 2026'
 
 function Section({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
   return (

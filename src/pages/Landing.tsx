@@ -364,7 +364,7 @@ export function Landing(): JSX.Element {
 
             <p className="mt-4 text-center text-xs text-text">
               Need a custom plan for a larger operation?{' '}
-              <a href="mailto:support@storeiq.app" className="text-accent hover:underline">
+              <a href="mailto:saleemtalha294@gmail.com" className="text-accent hover:underline">
                 Contact us
               </a>
             </p>

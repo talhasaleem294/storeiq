@@ -1,6 +1,7 @@
 import { getServiceClient, getSupabaseClient } from '../_shared/auth.ts'
 import { handleCors } from '../_shared/cors.ts'
 import { errorResponse, jsonResponse } from '../_shared/response.ts'
+import { fetchWithRetry } from '../_shared/retry.ts'
 
 const GRAPH_API = 'https://graph.facebook.com/v21.0'
 
@@ -30,7 +31,7 @@ Deno.serve(async (req) => {
   const db = getServiceClient()
   const { data: conn, error: connError } = await db
     .from('meta_connections')
-    .select('ads_account_id, access_token')
+    .select('ads_account_id, access_token, token_expires_at')
     .eq('workspace_id', workspaceId)
     .maybeSingle()
 
@@ -38,7 +39,35 @@ Deno.serve(async (req) => {
     return errorResponse('Meta Ads not connected', 'NOT_CONNECTED', 404)
   }
 
-  const { ads_account_id, access_token } = conn as { ads_account_id: string; access_token: string }
+  let { ads_account_id, access_token } = conn as { ads_account_id: string; access_token: string; token_expires_at?: string | null }
+  const tokenExpiresAt = (conn as { token_expires_at?: string | null }).token_expires_at
+
+  // Proactively refresh token if expiring within 10 days
+  if (tokenExpiresAt) {
+    const daysLeft = (new Date(tokenExpiresAt).getTime() - Date.now()) / 86_400_000
+    if (daysLeft < 10) {
+      const META_APP_ID = Deno.env.get('META_APP_ID') ?? ''
+      const META_APP_SECRET = Deno.env.get('META_APP_SECRET') ?? ''
+      const refreshUrl = `https://graph.facebook.com/oauth/access_token?grant_type=fb_exchange_token&client_id=${META_APP_ID}&client_secret=${META_APP_SECRET}&fb_exchange_token=${access_token}`
+      try {
+        const refreshRes = await fetch(refreshUrl)
+        if (refreshRes.ok) {
+          const refreshJson = await refreshRes.json() as { access_token?: string; expires_in?: number }
+          if (refreshJson.access_token) {
+            const newExpiry = new Date(Date.now() + (refreshJson.expires_in ?? 5_184_000) * 1000).toISOString()
+            await db.from('meta_connections').update({
+              access_token: refreshJson.access_token,
+              token_expires_at: newExpiry,
+            }).eq('workspace_id', workspaceId)
+            access_token = refreshJson.access_token
+            console.log(`[meta-sync] refreshed token for workspace ${workspaceId}, expires ${newExpiry}`)
+          }
+        }
+      } catch (err) {
+        console.error('[meta-sync] token refresh failed (non-fatal):', err)
+      }
+    }
+  }
 
   // Fetch current campaign statuses (one request, no pagination needed for typical accounts)
   const statusMap = new Map<string, string>()
@@ -48,7 +77,7 @@ Deno.serve(async (req) => {
     campaignsUrl.searchParams.set('limit', '200')
     campaignsUrl.searchParams.set('access_token', access_token)
 
-    const campaignsRes = await fetch(campaignsUrl.toString())
+    const campaignsRes = await fetchWithRetry(campaignsUrl.toString(), {})
     if (campaignsRes.ok) {
       const campaignsJson = await campaignsRes.json() as {
         data?: Array<{ id: string; effective_status: string }>
@@ -76,7 +105,7 @@ Deno.serve(async (req) => {
       insightsUrl.searchParams.set('access_token', access_token)
       if (afterCursor) insightsUrl.searchParams.set('after', afterCursor)
 
-      const res = await fetch(insightsUrl.toString())
+      const res = await fetchWithRetry(insightsUrl.toString(), {})
       if (!res.ok) {
         const text = await res.text()
         console.error('[meta-sync] insights API error:', text)

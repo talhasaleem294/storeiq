@@ -60,7 +60,7 @@ export function Settings(): JSX.Element {
 
   // Cost settings
   const { config: costConfig, saving: costSaving, update: updateCostConfig } = useWorkspaceCostConfig(workspaceId ?? '')
-  const [costForm, setCostForm] = useState({ cod_fee_flat: '', cod_fee_karachi: '', cod_fee_lahore: '', cod_fee_islamabad: '', cod_fee_other: '', packaging_cost: '' })
+  const [costForm, setCostForm] = useState({ cod_fee_flat: '', cod_fee_karachi: '', cod_fee_lahore: '', cod_fee_islamabad: '', cod_fee_other: '', packaging_cost: '', monthly_overheads: '' })
   const [costSaved, setCostSaved] = useState(false)
 
   useEffect(() => {
@@ -71,6 +71,7 @@ export function Settings(): JSX.Element {
       cod_fee_islamabad: costConfig.cod_fee_islamabad > 0 ? String(costConfig.cod_fee_islamabad) : '',
       cod_fee_other:     costConfig.cod_fee_other     > 0 ? String(costConfig.cod_fee_other)     : '',
       packaging_cost:    costConfig.packaging_cost    > 0 ? String(costConfig.packaging_cost)    : '',
+      monthly_overheads: costConfig.monthly_overheads > 0 ? String(costConfig.monthly_overheads) : '',
     })
   }, [costConfig])
 
@@ -83,6 +84,7 @@ export function Settings(): JSX.Element {
       cod_fee_islamabad: Number(costForm.cod_fee_islamabad) || 0,
       cod_fee_other:     Number(costForm.cod_fee_other)     || 0,
       packaging_cost:    Number(costForm.packaging_cost)    || 0,
+      monthly_overheads: Number(costForm.monthly_overheads) || 0,
     })
     setCostSaved(true)
     setTimeout(() => { setCostSaved(false) }, 4000)
@@ -619,6 +621,16 @@ export function Settings(): JSX.Element {
                   placeholder="PKR 0"
                   value={costForm.packaging_cost}
                   onChange={e => { setCostForm(f => ({ ...f, packaging_cost: e.target.value })) }}
+                  disabled={!hasPermission(role, 'settings:view') || role === 'supervisor'}
+                />
+                <Input
+                  label="Monthly overheads (salaries, rent, etc.)"
+                  type="number"
+                  min={0}
+                  placeholder="PKR 0"
+                  hint="Deducted as a flat monthly amount from net profit"
+                  value={costForm.monthly_overheads}
+                  onChange={e => { setCostForm(f => ({ ...f, monthly_overheads: e.target.value })) }}
                   disabled={!hasPermission(role, 'settings:view') || role === 'supervisor'}
                 />
               </Card>

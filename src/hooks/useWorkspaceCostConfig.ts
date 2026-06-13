@@ -9,6 +9,7 @@ export interface WorkspaceCostConfig {
   cod_fee_islamabad: number
   cod_fee_other: number
   packaging_cost: number
+  monthly_overheads: number
 }
 
 const DEFAULTS: WorkspaceCostConfig = {
@@ -18,6 +19,7 @@ const DEFAULTS: WorkspaceCostConfig = {
   cod_fee_islamabad: 0,
   cod_fee_other: 0,
   packaging_cost: 0,
+  monthly_overheads: 0,
 }
 
 interface UseCostConfigReturn {
@@ -37,7 +39,7 @@ export function useWorkspaceCostConfig(workspaceId: string): UseCostConfigReturn
     setLoading(true)
     void supabase
       .from('workspace_cost_config')
-      .select('cod_fee_flat,cod_fee_karachi,cod_fee_lahore,cod_fee_islamabad,cod_fee_other,packaging_cost')
+      .select('cod_fee_flat,cod_fee_karachi,cod_fee_lahore,cod_fee_islamabad,cod_fee_other,packaging_cost,monthly_overheads')
       .eq('workspace_id', workspaceId)
       .maybeSingle()
       .then(({ data }) => {

@@ -1,9 +1,13 @@
+import { useState } from 'react'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SkeletonTable } from '@/components/ui/Skeleton'
+import { computeRtoRiskScore } from '@/lib/rtoPredictor'
+import type { RtoRisk } from '@/lib/rtoPredictor'
+import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/formatters'
-import type { Order } from '@/types/app'
+import type { ConfirmationStatus, Order } from '@/types/app'
 
 interface OrdersTableProps {
   orders: Order[]
@@ -12,6 +16,9 @@ interface OrdersTableProps {
   page?: number
   pageSize?: number
   onPageChange?: (page: number) => void
+  canConfirm?: boolean
+  cityRtoRates?: Map<string, number>
+  priorCustomerIds?: Set<string>
 }
 
 function statusVariant(status: string): 'success' | 'warning' | 'error' | 'neutral' {
@@ -21,7 +28,41 @@ function statusVariant(status: string): 'success' | 'warning' | 'error' | 'neutr
   return 'neutral'
 }
 
-export function OrdersTable({ orders, loading, totalCount = 0, page = 0, pageSize = 10, onPageChange }: OrdersTableProps): JSX.Element {
+function confirmationBadge(cs: ConfirmationStatus | null): JSX.Element | null {
+  if (!cs) return null
+  if (cs === 'confirmed') return <Badge variant="success">✓ Confirmed</Badge>
+  if (cs === 'no_response') return <Badge variant="neutral">? No Response</Badge>
+  return <Badge variant="error">✗ Cancelled</Badge>
+}
+
+function riskBadge(risk: RtoRisk): JSX.Element {
+  if (risk === 'high') return <Badge variant="error">High</Badge>
+  if (risk === 'medium') return <Badge variant="warning">Medium</Badge>
+  return <Badge variant="success">Low</Badge>
+}
+
+export function OrdersTable({
+  orders,
+  loading,
+  totalCount = 0,
+  page = 0,
+  pageSize = 10,
+  onPageChange,
+  canConfirm = false,
+  cityRtoRates,
+  priorCustomerIds,
+}: OrdersTableProps): JSX.Element {
+  const showRisk = cityRtoRates !== undefined && priorCustomerIds !== undefined
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
+  const [localStatuses, setLocalStatuses] = useState<Record<string, ConfirmationStatus | null>>({})
+
+  async function setConfirmation(orderId: string, status: ConfirmationStatus): Promise<void> {
+    setPendingIds((prev) => new Set(prev).add(orderId))
+    await supabase.from('orders').update({ confirmation_status: status }).eq('id', orderId)
+    setLocalStatuses((prev) => ({ ...prev, [orderId]: status }))
+    setPendingIds((prev) => { const s = new Set(prev); s.delete(orderId); return s })
+  }
+
   if (loading) return <SkeletonTable rows={5} />
 
   const totalPages = Math.ceil(totalCount / pageSize)
@@ -39,6 +80,47 @@ export function OrdersTable({ orders, loading, totalCount = 0, page = 0, pageSiz
     )
   }
 
+  function ConfirmButtons({ order }: { order: Order }): JSX.Element {
+    const cs = localStatuses[order.id] ?? order.confirmation_status
+    const busy = pendingIds.has(order.id)
+    if (!canConfirm) return confirmationBadge(cs) ?? <span className="text-text/40 text-xs">—</span>
+    return (
+      <div className="flex items-center gap-1">
+        {cs ? (
+          <>
+            {confirmationBadge(cs)}
+            <button
+              onClick={() => { void setConfirmation(order.id, 'confirmed') }}
+              disabled={busy}
+              title="Mark confirmed"
+              className="ml-1 rounded px-1.5 py-0.5 text-xs text-text hover:bg-surface disabled:opacity-40"
+            >
+              ✎
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => { void setConfirmation(order.id, 'confirmed') }}
+              disabled={busy}
+              className="rounded border border-green-300 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 hover:bg-green-100 disabled:opacity-40 dark:border-green-700 dark:bg-green-900/20 dark:text-green-400"
+            >✓</button>
+            <button
+              onClick={() => { void setConfirmation(order.id, 'no_response') }}
+              disabled={busy}
+              className="rounded border border-border bg-surface px-2 py-0.5 text-xs font-medium text-text hover:bg-bg disabled:opacity-40"
+            >?</button>
+            <button
+              onClick={() => { void setConfirmation(order.id, 'cancelled') }}
+              disabled={busy}
+              className="rounded border border-red-300 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600 hover:bg-red-100 disabled:opacity-40 dark:border-red-700 dark:bg-red-900/20 dark:text-red-400"
+            >✗</button>
+          </>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div>
       {/* Desktop table */}
@@ -51,6 +133,8 @@ export function OrdersTable({ orders, loading, totalCount = 0, page = 0, pageSiz
               <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-text">Revenue</th>
               <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-text">Refund</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-text">Status</th>
+              {showRisk && <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-text">RTO Risk</th>}
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-text">Confirmation</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -64,6 +148,14 @@ export function OrdersTable({ orders, loading, totalCount = 0, page = 0, pageSiz
                 </td>
                 <td className="px-4 py-3">
                   <Badge variant={statusVariant(order.status)}>{order.status}</Badge>
+                </td>
+                {showRisk && (
+                  <td className="px-4 py-3">
+                    {riskBadge(computeRtoRiskScore(order, cityRtoRates!, priorCustomerIds!))}
+                  </td>
+                )}
+                <td className="px-4 py-3">
+                  <ConfirmButtons order={order} />
                 </td>
               </tr>
             ))}
@@ -94,6 +186,16 @@ export function OrdersTable({ orders, loading, totalCount = 0, page = 0, pageSiz
                 </span>
               </div>
             )}
+            {showRisk && (
+              <div className="mt-2 flex items-center justify-between">
+                <span className="text-xs text-text">RTO Risk</span>
+                {riskBadge(computeRtoRiskScore(order, cityRtoRates!, priorCustomerIds!))}
+              </div>
+            )}
+            <div className="mt-2 flex items-center justify-between">
+              <span className="text-xs text-text">Confirmation</span>
+              <ConfirmButtons order={order} />
+            </div>
           </Card>
         ))}
       </div>

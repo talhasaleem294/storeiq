@@ -73,6 +73,8 @@ export interface MetaConnection {
   created_at: string
 }
 
+export type ConfirmationStatus = 'confirmed' | 'no_response' | 'cancelled'
+
 export interface Order {
   id: string
   workspace_id: string
@@ -82,6 +84,9 @@ export interface Order {
   status: string
   fulfillment_status: string | null
   created_at: string
+  confirmation_status: ConfirmationStatus | null
+  city?: string | null
+  customer_id?: string | null
 }
 
 export interface AdsData {

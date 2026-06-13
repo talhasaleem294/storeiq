@@ -11,14 +11,18 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { InsightBanner } from '@/components/ui/InsightBanner'
 import { useAdsData } from '@/hooks/useAdsData'
 import { useCityAndCustomerStats } from '@/hooks/useCityAndCustomerStats'
+import { useCodRemittanceLog } from '@/hooks/useCodRemittanceLog'
+import { useCustomerRFM } from '@/hooks/useCustomerRFM'
+import type { RfmSegment } from '@/hooks/useCustomerRFM'
 import { useInfluencerSpend } from '@/hooks/useInfluencerSpend'
 import { useMetaConnection } from '@/hooks/useMetaConnection'
 import { useOrders } from '@/hooks/useOrders'
 import { useShopifyConnection } from '@/hooks/useShopifyConnection'
 import { useWorkspaceCostConfig } from '@/hooks/useWorkspaceCostConfig'
+import { useWorkspaceRole } from '@/hooks/useWorkspaceRole'
 import { ROUTES } from '@/lib/constants'
 import { computeStructuredCosts } from '@/lib/costCalculator'
-import { exportOrdersCSV } from '@/lib/csv'
+import { exportOrdersCSV, exportRFMSegmentCSV, exportTaxReportCSV } from '@/lib/csv'
 import { formatCurrency, formatPercentage } from '@/lib/formatters'
 import type { DateRange } from '@/types/app'
 
@@ -53,12 +57,24 @@ export function Profit(): JSX.Element {
   const [selectedDays, setSelectedDays] = useState<number>(30)
   const [ordersPage, setOrdersPage] = useState(0)
   const [avgCostPerOrder, setAvgCostPerOrder] = useState<number>(0)
+  const [revenueMode, setRevenueMode] = useState<'placed' | 'collected'>('placed')
   const dateRange = useMemo(() => getDateRange(selectedDays), [selectedDays])
   const { orders, summary, stats, totalCount, loading: ordersLoading } = useOrders(workspaceId ?? '', dateRange, selectedDays, ordersPage)
   const { totals: adsTotals, loading: adsLoading } = useAdsData(workspaceId ?? '', dateRange)
   const { totalCommittedSpend: influencerSpend, loading: influencerLoading } = useInfluencerSpend(workspaceId ?? '', dateRange)
   const { cityRows, customerStats, loading: cityLoading } = useCityAndCustomerStats(workspaceId ?? '', dateRange)
   const { config: costConfig } = useWorkspaceCostConfig(workspaceId ?? '')
+  const codLog = useCodRemittanceLog(workspaceId ?? '', dateRange)
+  const { role } = useWorkspaceRole(workspaceId ?? '')
+  const canConfirm = role === 'owner' || role === 'admin'
+  const rfm = useCustomerRFM(workspaceId ?? '', dateRange)
+
+  const cityRtoRates = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const r of cityRows) m.set(r.city.toLowerCase(), r.rtoRate / 100)
+    return m
+  }, [cityRows])
+  const priorCustomerIds = customerStats?.priorCustomerIds ?? new Set<string>()
 
   // Reset to page 0 whenever the date range changes
   useEffect(() => { setOrdersPage(0) }, [selectedDays])
@@ -69,9 +85,20 @@ export function Profit(): JSX.Element {
   const marketingSpend = adSpend + influencerSpend
   const structuredCosts = computeStructuredCosts(costConfig, stats?.orderCount ?? 0, cityRows)
   const hasStructuredCosts = structuredCosts > 0
-  const trueNetProfit = summary.netProfit - adSpend - influencerSpend - structuredCosts
+  const monthlyOverheads = costConfig.monthly_overheads
+  const hasOverheads = monthlyOverheads > 0
+  const trueNetProfit = summary.netProfit - adSpend - influencerSpend - structuredCosts - monthlyOverheads
   const estimatedCogs = avgCostPerOrder > 0 && stats ? avgCostPerOrder * stats.orderCount : 0
   const displayProfit = avgCostPerOrder > 0 ? trueNetProfit - estimatedCogs : trueNetProfit
+
+  // COD-Aware toggle
+  const codPendingAmount = stats ? Math.max(0, stats.codRevenue - codLog.totalReceived) : 0
+  const collectedRevenue = stats ? stats.prepaidRevenue + codLog.totalReceived : summary.totalRevenue
+  const activeRevenue = revenueMode === 'collected' ? collectedRevenue : summary.totalRevenue
+  const collectedNetProfit = collectedRevenue - summary.totalRefunds - adSpend - influencerSpend - structuredCosts - monthlyOverheads
+  const activeDisplayProfit = revenueMode === 'collected'
+    ? (avgCostPerOrder > 0 ? collectedNetProfit - estimatedCogs : collectedNetProfit)
+    : displayProfit
 
   const loading = connLoading || ordersLoading || metaConnLoading || adsLoading || influencerLoading || cityLoading
   const isConnected = !connLoading && connection !== null
@@ -155,13 +182,31 @@ export function Profit(): JSX.Element {
         </div>
       </div>
 
+      {/* COD-Aware toggle */}
+      {stats && stats.codCount > 0 && (
+        <div className="flex items-center gap-1 self-start rounded-lg border border-border bg-surface p-1">
+          <button
+            onClick={() => { setRevenueMode('placed') }}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${revenueMode === 'placed' ? 'bg-bg text-heading shadow-sm' : 'text-text hover:text-heading'}`}
+          >
+            Placed
+          </button>
+          <button
+            onClick={() => { setRevenueMode('collected') }}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${revenueMode === 'collected' ? 'bg-bg text-heading shadow-sm' : 'text-text hover:text-heading'}`}
+          >
+            Collected
+          </button>
+        </div>
+      )}
+
       {/* Summary cards — QW #1 trend arrows */}
       {(() => {
-        const extraCols = (isMetaConnected || hasInfluencerSpend ? 1 : 0) + (hasStructuredCosts ? 1 : 0)
-        const cols = 3 + extraCols
+        const extraCols = (isMetaConnected || hasInfluencerSpend ? 1 : 0) + (hasStructuredCosts ? 1 : 0) + (hasOverheads ? 1 : 0)
+        const cols = Math.min(3 + extraCols, 5)
         return (
-          <div className={`grid grid-cols-1 gap-4 sm:grid-cols-${String(cols)}`}>
-            <ProfitSummaryCard label="Revenue" value={formatCurrency(summary.totalRevenue)} trend={revenueTrend} loading={loading} />
+          <div className={`grid grid-cols-1 gap-4 ${cols === 5 ? 'sm:grid-cols-5' : cols === 4 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
+            <ProfitSummaryCard label={revenueMode === 'collected' ? 'Collected Revenue' : 'Revenue'} value={formatCurrency(activeRevenue)} trend={revenueTrend} loading={loading} />
             <ProfitSummaryCard label="Refunds" value={formatCurrency(summary.totalRefunds)} loading={loading} />
             {(isMetaConnected || hasInfluencerSpend) && (
               <ProfitSummaryCard label="Marketing Spend" value={formatCurrency(marketingSpend)} loading={loading} />
@@ -169,13 +214,16 @@ export function Profit(): JSX.Element {
             {hasStructuredCosts && (
               <ProfitSummaryCard label="Cost Structure" value={formatCurrency(structuredCosts)} loading={loading} />
             )}
+            {hasOverheads && (
+              <ProfitSummaryCard label="Overhead Cost" value={formatCurrency(monthlyOverheads)} loading={loading} />
+            )}
             <ProfitSummaryCard
               label={
                 avgCostPerOrder > 0
                   ? 'Net Profit (incl. est. COGS)'
-                  : (isMetaConnected || hasInfluencerSpend || hasStructuredCosts) ? 'Net Profit (after costs)' : 'Net Profit'
+                  : (isMetaConnected || hasInfluencerSpend || hasStructuredCosts || hasOverheads) ? 'Net Profit (after costs)' : 'Net Profit'
               }
-              value={formatCurrency(displayProfit)}
+              value={formatCurrency(activeDisplayProfit)}
               trend={profitTrend}
               loading={loading}
               highlight
@@ -183,6 +231,13 @@ export function Profit(): JSX.Element {
           </div>
         )
       })()}
+
+      {/* COD Pending chip */}
+      {revenueMode === 'collected' && codPendingAmount > 0 && (
+        <div className="flex items-center gap-1.5 self-start rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
+          <span>COD Pending: {formatCurrency(codPendingAmount)}</span>
+        </div>
+      )}
 
       {/* Key Ratios — ME #1 refund rate with trend */}
       {!loading && summary.totalRevenue > 0 && (
@@ -231,6 +286,30 @@ export function Profit(): JSX.Element {
                 <span className="text-amber-700 dark:text-amber-300">Late-night RTO</span>
                 <span className="font-semibold text-amber-800 dark:text-amber-200">{(lateNightRtoRate * 100).toFixed(1)}% (11pm–2am)</span>
               </div>
+            )
+          })()}
+          {/* Confirmation rate */}
+          {(() => {
+            const confirmed = orders.filter(o => o.confirmation_status === 'confirmed').length
+            const tagged = orders.filter(o => o.confirmation_status !== null).length
+            if (tagged === 0) return null
+            const rate = (confirmed / tagged) * 100
+            const unconfirmedHighValue = orders.filter(o => o.confirmation_status === null && o.revenue >= 3000).length
+            return (
+              <>
+                <div className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs">
+                  <span className="text-text">Confirmation Rate</span>
+                  <span className={`font-semibold ${rate >= 70 ? 'text-green-600' : rate >= 40 ? 'text-amber-600' : 'text-red-600'}`}>
+                    {rate.toFixed(1)}%
+                  </span>
+                </div>
+                {unconfirmedHighValue > 0 && (
+                  <div className="flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs dark:border-amber-700 dark:bg-amber-900/20">
+                    <span className="text-amber-700 dark:text-amber-300">High-risk unconfirmed</span>
+                    <span className="font-semibold text-amber-800 dark:text-amber-200">{String(unconfirmedHighValue)} orders</span>
+                  </div>
+                )}
+              </>
             )
           })()}
           <div className="flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-xs">
@@ -469,6 +548,37 @@ export function Profit(): JSX.Element {
         </Card>
       )}
 
+      {/* Customer Segments — RFM */}
+      {!loading && rfm.customers.length > 0 && (
+        <Card padding="md">
+          <h3 className="mb-4 text-sm font-semibold text-heading">Customer Segments</h3>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+            {(
+              [
+                { key: 'champion' as RfmSegment, label: 'Champions', color: 'text-green-700 dark:text-green-300', border: 'border-green-200 dark:border-green-800', bg: 'bg-green-50 dark:bg-green-900/20' },
+                { key: 'loyal' as RfmSegment, label: 'Loyal', color: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800', bg: 'bg-blue-50 dark:bg-blue-900/20' },
+                { key: 'at_risk' as RfmSegment, label: 'At Risk', color: 'text-amber-700 dark:text-amber-300', border: 'border-amber-200 dark:border-amber-800', bg: 'bg-amber-50 dark:bg-amber-900/20' },
+                { key: 'new' as RfmSegment, label: 'New', color: 'text-text', border: 'border-border', bg: 'bg-surface' },
+                { key: 'lost' as RfmSegment, label: 'Lost', color: 'text-red-700 dark:text-red-300', border: 'border-red-200 dark:border-red-800', bg: 'bg-red-50 dark:bg-red-900/20' },
+              ] as const
+            ).map(seg => (
+              <div key={seg.key} className={`rounded-lg border ${seg.border} ${seg.bg} p-3`}>
+                <p className={`text-lg font-bold ${seg.color}`}>{String(rfm.counts[seg.key])}</p>
+                <p className="mt-0.5 text-xs text-text">{seg.label}</p>
+                {rfm.counts[seg.key] > 0 && (
+                  <button
+                    onClick={() => { exportRFMSegmentCSV(seg.key, rfm.customers) }}
+                    className="mt-2 text-xs text-text underline hover:text-heading"
+                  >
+                    Export
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {/* Orders breakdown */}
       <div>
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -476,13 +586,25 @@ export function Profit(): JSX.Element {
             Orders ({String(totalCount)})
           </h2>
           {!loading && totalCount > 0 && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => { exportOrdersCSV(orders) }}
-            >
-              Export CSV
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  const label = `last-${String(selectedDays)}-days`
+                  exportTaxReportCSV(label, summary.totalRevenue, summary.totalRefunds, adSpend, influencerSpend)
+                }}
+              >
+                Tax Report
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => { exportOrdersCSV(orders) }}
+              >
+                Export CSV
+              </Button>
+            </div>
           )}
         </div>
         <OrdersTable
@@ -492,6 +614,9 @@ export function Profit(): JSX.Element {
           page={ordersPage}
           pageSize={10}
           onPageChange={setOrdersPage}
+          canConfirm={canConfirm}
+          cityRtoRates={cityRtoRates}
+          priorCustomerIds={priorCustomerIds}
         />
       </div>
     </div>

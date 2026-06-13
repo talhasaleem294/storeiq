@@ -173,17 +173,17 @@ Deno.serve(async (req) => {
 
   const results: Array<{ workspaceId: string; synced: number; error?: string }> = []
 
-  // Process sequentially — Shopify rate limit is per-store so no cross-store stagger needed
-  for (const conn of connections) {
-    const { workspace_id, shop_domain, access_token } = conn as {
-      workspace_id: string
-      shop_domain: string
-      access_token: string
-    }
+  // Process sequentially with 30s stagger to avoid simultaneous external API calls at scale
+  for (let i = 0; i < connections.length; i++) {
+    const conn = connections[i] as { workspace_id: string; shop_domain: string; access_token: string }
+    const { workspace_id, shop_domain, access_token } = conn
     console.log(`[shopify-sync-all] starting workspace ${workspace_id} (${shop_domain})`)
     const result = await syncWorkspace(workspace_id, shop_domain, access_token, db)
     results.push(result)
     console.log(`[shopify-sync-all] done workspace ${workspace_id}: ${String(result.synced)} orders synced`)
+    if (i < connections.length - 1) {
+      await new Promise((r) => setTimeout(r, 30_000))
+    }
   }
 
   const totalSynced = results.reduce((s, r) => s + r.synced, 0)

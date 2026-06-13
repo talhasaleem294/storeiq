@@ -12,6 +12,7 @@ interface CampaignRow {
   roas: number
   ctr: number
   status: string
+  date?: string
 }
 
 export interface CampaignInsights {
@@ -23,6 +24,8 @@ export interface CampaignInsights {
   zeroPurchaseSpend: number
   bestCtrCampaign: { name: string; ctr: number } | null
   deadCampaigns: Array<{ name: string; spend: number }>
+  thisWeekSpend: number
+  lastWeekSpend: number
 }
 
 interface UseAdsDataReturn {
@@ -45,6 +48,19 @@ function computeInsights(rows: CampaignRow[]): CampaignInsights {
   const worst = losers.length ? losers.reduce((a, b) => (a.spend > b.spend ? a : b)) : null
   const bestCtr = spenders.length ? spenders.reduce((a, b) => (a.ctr > b.ctr ? a : b)) : null
 
+  const now = Date.now()
+  const oneDay = 86_400_000
+  const thisWeekCutoff = now - 7 * oneDay
+  const lastWeekCutoff = now - 14 * oneDay
+  let thisWeekSpend = 0
+  let lastWeekSpend = 0
+  for (const r of rows) {
+    if (!r.date) continue
+    const ts = new Date(r.date).getTime()
+    if (ts >= thisWeekCutoff) thisWeekSpend += r.spend
+    else if (ts >= lastWeekCutoff) lastWeekSpend += r.spend
+  }
+
   return {
     moneyAtRisk: losers.reduce((s, c) => s + c.spend, 0),
     losingCount: losers.length,
@@ -54,6 +70,8 @@ function computeInsights(rows: CampaignRow[]): CampaignInsights {
     zeroPurchaseSpend: zeroPurchase.reduce((s, c) => s + c.spend, 0),
     bestCtrCampaign: bestCtr ? { name: bestCtr.campaign_name, ctr: bestCtr.ctr } : null,
     deadCampaigns: zeroPurchase.map(c => ({ name: c.campaign_name, spend: c.spend })),
+    thisWeekSpend,
+    lastWeekSpend,
   }
 }
 
@@ -84,7 +102,7 @@ export function useAdsData(
     // Totals query — unfiltered by perf so summary cards and insights reflect all campaigns
     let totalsQ = supabase
       .from('ads_data')
-      .select('campaign_name, spend, roas, ctr, status')
+      .select('campaign_name, spend, roas, ctr, status, date')
       .eq('workspace_id', workspaceId)
 
     // Display query — paginated and perf-filtered

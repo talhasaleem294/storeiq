@@ -20,6 +20,8 @@ export interface OrderStats {
   prepaidCount: number
   rtoCount: number
   rtoRevenue: number
+  thisWeekRtoCount: number
+  lastWeekRtoCount: number
   // Task 7 — AOV + month-over-month
   orderCount: number
   thisMonthRevenue: number
@@ -76,6 +78,8 @@ function computeStats(allRows: SummaryRow[], dateRangeDays: number): OrderStats 
   let prepaidCount = 0
   let rtoCount = 0
   let rtoRevenue = 0
+  let thisWeekRtoCount = 0
+  let lastWeekRtoCount = 0
 
   // 7-day profit sparkline: map keyed by YYYY-MM-DD
   const profitByDay = new Map<string, number>()
@@ -121,6 +125,8 @@ function computeStats(allRows: SummaryRow[], dateRangeDays: number): OrderStats 
       rtoCount += 1
       rtoRevenue += revenue
       hourlyRtoCounts[d.getHours()] += 1
+      if (ts >= thisWeekCutoff) thisWeekRtoCount += 1
+      else if (ts >= lastWeekCutoff) lastWeekRtoCount += 1
     }
 
     // Sparkline accumulation
@@ -149,6 +155,8 @@ function computeStats(allRows: SummaryRow[], dateRangeDays: number): OrderStats 
     prepaidCount,
     rtoCount,
     rtoRevenue,
+    thisWeekRtoCount,
+    lastWeekRtoCount,
     orderCount: allRows.length,
     thisMonthRevenue,
     lastMonthRevenue,
@@ -182,7 +190,7 @@ export function useOrders(workspaceId: string, dateRange?: DateRange, dateRangeD
     const to = from + PAGINATION.DEFAULT_PAGE_SIZE - 1
     let displayQ = supabase
       .from('orders')
-      .select('id, workspace_id, shopify_order_id, revenue, refund_amount, status, fulfillment_status, created_at')
+      .select('id, workspace_id, shopify_order_id, revenue, refund_amount, status, fulfillment_status, created_at, confirmation_status, city, customer_id')
       .eq('workspace_id', workspaceId)
       .order('created_at', { ascending: false })
       .range(from, to)

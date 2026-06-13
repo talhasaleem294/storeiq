@@ -1,3 +1,4 @@
+import type { RfmCustomer, RfmSegment } from '@/hooks/useCustomerRFM'
 import type { AdsData, Influencer, InfluencerDeal, Order } from '@/types/app'
 
 function downloadCSV(filename: string, rows: string[][]): void {
@@ -61,6 +62,31 @@ export function exportInfluencersCSV(
     inf.totalSpend.toFixed(2),
   ])
   downloadCSV('storeiq-influencers.csv', [headers, ...rows])
+}
+
+export function exportTaxReportCSV(
+  periodLabel: string,
+  totalRevenue: number,
+  totalRefunds: number,
+  adSpend: number,
+  influencerSpend: number,
+): void {
+  const netRevenue = totalRevenue - totalRefunds
+  const totalMarketing = adSpend + influencerSpend
+  const netTaxable = netRevenue - totalMarketing
+  downloadCSV(`storeiq-tax-report-${periodLabel}.csv`, [
+    ['Period', 'Gross Revenue (PKR)', 'Total Refunds (PKR)', 'Net Revenue (PKR)', 'Ad Spend (PKR)', 'Influencer Spend (PKR)', 'Total Marketing (PKR)', 'Net Taxable Income (PKR)'],
+    [periodLabel, totalRevenue.toFixed(2), totalRefunds.toFixed(2), netRevenue.toFixed(2), adSpend.toFixed(2), influencerSpend.toFixed(2), totalMarketing.toFixed(2), netTaxable.toFixed(2)],
+  ])
+}
+
+export function exportRFMSegmentCSV(segment: RfmSegment, customers: RfmCustomer[]): void {
+  const label = segment.replace('_', '-')
+  const headers = ['Customer ID', 'Last Order (days ago)', 'Order Count', 'Total Spend (PKR)', 'Segment']
+  const rows = customers
+    .filter(c => c.segment === segment)
+    .map(c => [c.customer_id, String(c.lastOrderDaysAgo), String(c.orderCount), c.totalSpend.toFixed(2), segment])
+  downloadCSV(`storeiq-rfm-${label}.csv`, [headers, ...rows])
 }
 
 export function exportCampaignsCSV(campaigns: AdsData[]): void {

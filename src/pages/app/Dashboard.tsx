@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
+import { CashFlowCalendar } from '@/components/features/CashFlowCalendar'
 import { OrdersTable } from '@/components/features/OrdersTable'
 import { ProfitSummaryCard } from '@/components/features/ProfitSummaryCard'
 import { RevenueChart } from '@/components/features/RevenueChart'
@@ -17,6 +18,7 @@ import { useShopifyConnection } from '@/hooks/useShopifyConnection'
 import { useWorkspaceCostConfig } from '@/hooks/useWorkspaceCostConfig'
 import { ROUTES } from '@/lib/constants'
 import { computeStructuredCosts } from '@/lib/costCalculator'
+import { computeRtoRiskScore } from '@/lib/rtoPredictor'
 import { formatCurrency, formatPercentage } from '@/lib/formatters'
 import type { DateRange } from '@/types/app'
 
@@ -49,11 +51,12 @@ export function Dashboard(): JSX.Element {
   }, [])
 
   const { orders, summary, stats, loading: ordersLoading } = useOrders(workspaceId ?? '', dashboardDateRange, 30)
-  const { totals: adsTotals, loading: adsLoading } = useAdsData(workspaceId ?? '')
+  const { totals: adsTotals, insights: adsInsights, loading: adsLoading } = useAdsData(workspaceId ?? '')
   const { totalCommittedSpend: influencerSpend, loading: influencerLoading } = useInfluencerSpend(workspaceId ?? '')
   const { config: costConfig } = useWorkspaceCostConfig(workspaceId ?? '')
   const codLog = useCodRemittanceLog(workspaceId ?? '', dashboardDateRange)
 
+  const [revenueMode, setRevenueMode] = useState<'placed' | 'collected'>('placed')
   const [showRemittanceModal, setShowRemittanceModal] = useState(false)
   const [remittanceAmount, setRemittanceAmount] = useState('')
   const [remittanceDate, setRemittanceDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
@@ -65,7 +68,16 @@ export function Dashboard(): JSX.Element {
   // Dashboard has no cityRows — use flat-rate COD fee only
   const structuredCosts = computeStructuredCosts(costConfig, stats?.orderCount ?? 0, [])
   const hasStructuredCosts = structuredCosts > 0
-  const trueNetProfit = summary.netProfit - adSpend - influencerSpend - structuredCosts
+  const monthlyOverheads = costConfig.monthly_overheads
+  const hasOverheads = monthlyOverheads > 0
+  const trueNetProfit = summary.netProfit - adSpend - influencerSpend - structuredCosts - monthlyOverheads
+
+  // COD-Aware toggle
+  const codPendingAmount = stats ? Math.max(0, stats.codRevenue - codLog.totalReceived) : 0
+  const collectedRevenue = stats ? stats.prepaidRevenue + codLog.totalReceived : summary.totalRevenue
+  const activeRevenue = revenueMode === 'collected' ? collectedRevenue : summary.totalRevenue
+  const collectedNetProfit = collectedRevenue - summary.totalRefunds - adSpend - influencerSpend - structuredCosts - monthlyOverheads
+  const activeNetProfit = revenueMode === 'collected' ? collectedNetProfit : trueNetProfit
 
   const isLoading = connLoading || ordersLoading || metaConnLoading || adsLoading || influencerLoading
   const isConnected = !connLoading && connection !== null
@@ -276,15 +288,33 @@ export function Dashboard(): JSX.Element {
         />
       )}
 
+      {/* COD-Aware toggle */}
+      {stats && stats.codCount > 0 && (
+        <div className="flex items-center gap-1 self-start rounded-lg border border-border bg-surface p-1">
+          <button
+            onClick={() => { setRevenueMode('placed') }}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${revenueMode === 'placed' ? 'bg-bg text-heading shadow-sm' : 'text-text hover:text-heading'}`}
+          >
+            Placed
+          </button>
+          <button
+            onClick={() => { setRevenueMode('collected') }}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${revenueMode === 'collected' ? 'bg-bg text-heading shadow-sm' : 'text-text hover:text-heading'}`}
+          >
+            Collected
+          </button>
+        </div>
+      )}
+
       {/* Summary cards — QW #1: trend arrows wired */}
       {(() => {
-        const extraCols = (isMetaConnected || hasInfluencerSpend ? 1 : 0) + (hasStructuredCosts ? 1 : 0)
-        const cols = 3 + extraCols
+        const extraCols = (isMetaConnected || hasInfluencerSpend ? 1 : 0) + (hasStructuredCosts ? 1 : 0) + (hasOverheads ? 1 : 0)
+        const cols = Math.min(3 + extraCols, 5)
         return (
           <div className={`grid grid-cols-1 gap-4 ${cols === 5 ? 'sm:grid-cols-5' : cols === 4 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
             <ProfitSummaryCard
-              label="Total Revenue"
-              value={formatCurrency(summary.totalRevenue)}
+              label={revenueMode === 'collected' ? 'Collected Revenue' : 'Total Revenue'}
+              value={formatCurrency(activeRevenue)}
               trend={revenueTrend}
               loading={isLoading}
             />
@@ -307,13 +337,20 @@ export function Dashboard(): JSX.Element {
                 loading={isLoading}
               />
             )}
+            {hasOverheads && (
+              <ProfitSummaryCard
+                label="Overhead Cost"
+                value={formatCurrency(monthlyOverheads)}
+                loading={isLoading}
+              />
+            )}
             <ProfitSummaryCard
               label={
-                (isMetaConnected || hasInfluencerSpend || hasStructuredCosts)
+                (isMetaConnected || hasInfluencerSpend || hasStructuredCosts || hasOverheads)
                   ? 'Net Profit (after costs)'
                   : 'Net Profit'
               }
-              value={formatCurrency(trueNetProfit)}
+              value={formatCurrency(activeNetProfit)}
               trend={profitTrend}
               loading={isLoading}
               highlight
@@ -322,6 +359,13 @@ export function Dashboard(): JSX.Element {
           </div>
         )
       })()}
+
+      {/* COD Pending chip */}
+      {revenueMode === 'collected' && codPendingAmount > 0 && (
+        <div className="flex items-center gap-1.5 self-start rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
+          <span>COD Pending: {formatCurrency(codPendingAmount)}</span>
+        </div>
+      )}
 
       {/* QW #2 — Revenue Milestone */}
       {!isLoading && summary.totalRevenue > 0 && (
@@ -401,6 +445,20 @@ export function Dashboard(): JSX.Element {
               </span>
             </div>
           )}
+          {/* High-risk orders chip */}
+          {(() => {
+            const emptyMap = new Map<string, number>()
+            const emptySet = new Set<string>()
+            const today = new Date().toISOString().slice(0, 10)
+            const highRisk = orders.filter(o => o.created_at.slice(0, 10) === today && computeRtoRiskScore(o, emptyMap, emptySet) === 'high')
+            if (highRisk.length === 0) return null
+            return (
+              <div className="flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs dark:border-amber-700 dark:bg-amber-900/20">
+                <span className="text-amber-700 dark:text-amber-300">High-risk today</span>
+                <span className="font-semibold text-amber-800 dark:text-amber-200">{String(highRisk.length)} orders</span>
+              </div>
+            )
+          })()}
         </div>
       )}
 
@@ -466,6 +524,75 @@ export function Dashboard(): JSX.Element {
           ) : (
             <p className="text-xs text-text/60">No remittances recorded yet</p>
           )}
+        </Card>
+      )}
+
+      {/* Cash Flow Calendar */}
+      {!isLoading && isConnected && (
+        <Card padding="md">
+          <p className="mb-3 text-xs font-medium uppercase tracking-wide text-text">Cash Flow Calendar</p>
+          <CashFlowCalendar workspaceId={workspaceId ?? ''} />
+        </Card>
+      )}
+
+      {/* What Changed This Week */}
+      {!isLoading && stats && (
+        <Card padding="md">
+          <p className="mb-3 text-xs font-medium uppercase tracking-wide text-text">This week vs last week</p>
+          <div className="space-y-2">
+            {/* Revenue */}
+            {(() => {
+              const delta = stats.thisWeekRevenue - stats.lastWeekRevenue
+              const pct = stats.lastWeekRevenue > 0 ? (delta / stats.lastWeekRevenue) * 100 : null
+              const up = delta >= 0
+              return (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-text">Revenue</span>
+                  <span className={up ? 'font-semibold text-green-600 dark:text-green-400' : 'font-semibold text-red-500'}>
+                    {up ? '▲' : '▼'} {formatCurrency(Math.abs(delta))}
+                    {pct !== null && <span className="ml-1 text-xs opacity-70">({Math.abs(pct).toFixed(1)}%)</span>}
+                  </span>
+                </div>
+              )
+            })()}
+            {/* RTO */}
+            {(() => {
+              const delta = stats.thisWeekRtoCount - stats.lastWeekRtoCount
+              const up = delta <= 0
+              return (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-text">RTOs</span>
+                  <span className={up ? 'font-semibold text-green-600 dark:text-green-400' : 'font-semibold text-red-500'}>
+                    {delta === 0 ? '—' : delta > 0 ? `▲ ${delta} more` : `▼ ${Math.abs(delta)} fewer`}
+                  </span>
+                </div>
+              )
+            })()}
+            {/* Ad Spend */}
+            {adsInsights && (
+              (() => {
+                const delta = adsInsights.thisWeekSpend - adsInsights.lastWeekSpend
+                const up = delta <= 0
+                return (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-text">Meta spend</span>
+                    <span className={up ? 'font-semibold text-green-600 dark:text-green-400' : 'font-semibold text-amber-600 dark:text-amber-400'}>
+                      {delta === 0 ? '—' : delta > 0 ? `▲ ${formatCurrency(delta)}` : `▼ ${formatCurrency(Math.abs(delta))}`}
+                    </span>
+                  </div>
+                )
+              })()
+            )}
+            {/* Best opportunity */}
+            {adsInsights?.bestCampaign && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-text">Best campaign</span>
+                <span className="max-w-[55%] truncate text-right font-semibold text-green-600 dark:text-green-400">
+                  {adsInsights.bestCampaign.name} ({adsInsights.bestCampaign.roas.toFixed(2)}x)
+                </span>
+              </div>
+            )}
+          </div>
         </Card>
       )}
 

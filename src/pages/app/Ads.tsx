@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useParams } from 'react-router-dom'
 
 import { ProfitSummaryCard } from '@/components/features/ProfitSummaryCard'
@@ -9,6 +10,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { InsightBanner } from '@/components/ui/InsightBanner'
 import { SkeletonTable } from '@/components/ui/Skeleton'
 import { type AdsPerformanceFilter, useAdsData } from '@/hooks/useAdsData'
+import { useCampaignHistory } from '@/hooks/useCampaignHistory'
 import { useMetaConnection } from '@/hooks/useMetaConnection'
 import { useOrderRTORate } from '@/hooks/useOrderRTORate'
 import { useWorkspaceCostConfig } from '@/hooks/useWorkspaceCostConfig'
@@ -53,6 +55,30 @@ function getMonthRange(): DateRange {
   }
 }
 
+function CampaignHistoryChart({ workspaceId, campaignId }: { workspaceId: string; campaignId: string }): JSX.Element {
+  const { rows, loading } = useCampaignHistory(workspaceId, campaignId)
+  if (loading) return <div className="py-6 text-center text-sm text-text">Loading history...</div>
+  if (rows.length === 0) return <div className="py-6 text-center text-sm text-text">No daily data available yet.</div>
+  return (
+    <ResponsiveContainer width="100%" height={160}>
+      <ComposedChart data={rows} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+        <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={(v: string) => v.slice(5)} />
+        <YAxis yAxisId="spend" orientation="left" tick={{ fontSize: 10 }} tickFormatter={(v: number) => String(Math.round(v))} />
+        <YAxis yAxisId="roas" orientation="right" tick={{ fontSize: 10 }} tickFormatter={(v: number) => `${v.toFixed(1)}x`} />
+        <Tooltip
+          formatter={(value: number, name: string) =>
+            name === 'spend' ? [`PKR ${Math.round(value)}`, 'Spend'] : [`${value.toFixed(2)}x`, 'ROAS']
+          }
+          labelFormatter={(label: string) => label}
+        />
+        <Bar yAxisId="spend" dataKey="spend" fill="#94a3b8" opacity={0.6} name="spend" />
+        <Line yAxisId="roas" type="monotone" dataKey="roas" stroke="#6366f1" strokeWidth={2} dot={false} name="roas" />
+      </ComposedChart>
+    </ResponsiveContainer>
+  )
+}
+
 export function Ads(): JSX.Element {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { connection: metaConn, loading: connLoading } = useMetaConnection(workspaceId ?? '')
@@ -66,6 +92,7 @@ export function Ads(): JSX.Element {
   const [exporting, setExporting] = useState(false)
   const [avgOrderValue, setAvgOrderValue] = useState<number>(0)
   const [avgCogs, setAvgCogs] = useState<number>(0)
+  const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null)
   const dateRange = useMemo(() => getDateRange(selectedDays), [selectedDays])
   const monthRange = useMemo(() => getMonthRange(), [])
 
@@ -542,6 +569,7 @@ export function Ads(): JSX.Element {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-surface">
+                    <th className="w-8 px-2 py-3"></th>
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-text">Campaign</th>
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-text">Status</th>
                     <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-text">
@@ -555,7 +583,17 @@ export function Ads(): JSX.Element {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {campaigns.map((c) => (
-                    <tr key={c.id} className="bg-bg transition-colors hover:bg-surface/50">
+                    <React.Fragment key={c.id}>
+                    <tr className="bg-bg transition-colors hover:bg-surface/50">
+                      <td className="px-2 py-3">
+                        <button
+                          onClick={() => { setExpandedCampaignId(prev => prev === c.campaign_id ? null : c.campaign_id) }}
+                          className="flex h-6 w-6 items-center justify-center rounded text-text hover:text-heading"
+                          title="View daily history"
+                        >
+                          {expandedCampaignId === c.campaign_id ? '▾' : '▸'}
+                        </button>
+                      </td>
                       <td className="max-w-xs truncate px-4 py-3 font-medium text-heading">{c.campaign_name}</td>
                       <td className="px-4 py-3">
                         <Badge variant={statusVariant(c.status)}>{statusLabel(c.status)}</Badge>
@@ -582,6 +620,15 @@ export function Ads(): JSX.Element {
                         })()}
                       </td>
                     </tr>
+                    {expandedCampaignId === c.campaign_id && (
+                      <tr key={`${c.id}-history`} className="bg-surface/50">
+                        <td colSpan={8} className="px-4 py-4">
+                          <p className="mb-2 text-xs font-medium text-text">Daily ROAS & Spend — last 30 days</p>
+                          <CampaignHistoryChart workspaceId={workspaceId ?? ''} campaignId={c.campaign_id} />
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>

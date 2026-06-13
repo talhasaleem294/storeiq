@@ -19,6 +19,7 @@ import { AuthCallback } from '@/pages/AuthCallback'
 import { Landing } from '@/pages/Landing'
 import { Login } from '@/pages/Login'
 import { Privacy } from '@/pages/Privacy'
+import { RoasCalculator } from '@/pages/RoasCalculator'
 import { SetPassword } from '@/pages/SetPassword'
 import { Signup } from '@/pages/Signup'
 import { Workspaces } from '@/pages/Workspaces'
@@ -27,6 +28,7 @@ export const router = createBrowserRouter([
   // Public routes
   { path: ROUTES.LANDING, element: <Landing /> },
   { path: ROUTES.PRIVACY, element: <Privacy /> },
+  { path: '/tools/roas-calculator', element: <RoasCalculator /> },
   { path: '/auth/callback', element: <AuthCallback /> },
   { path: ROUTES.AUTH_ACCEPT_INVITE, element: <AuthCallback /> },
 

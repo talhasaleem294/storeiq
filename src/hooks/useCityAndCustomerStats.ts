@@ -22,6 +22,7 @@ export interface CustomerStats {
   repeatRevenuePct: number
   topCustomers: TopCustomer[]
   newCustomerCount: number
+  priorCustomerIds: Set<string>
 }
 
 export interface UseCityAndCustomerStatsReturn {
@@ -138,6 +139,7 @@ export function useCityAndCustomerStats(
                 totalSpend: c.totalSpend,
               })),
             newCustomerCount,
+            priorCustomerIds,
           }
         : null
 
